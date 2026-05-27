@@ -151,18 +151,36 @@ elif page == "🔍 Recherche produits":
 
     if not results.empty:
         grade_emoji = {"a":"🟢","b":"🟡","c":"🟠","d":"🔴","e":"🔴"}
+        grade_color = {"a":"#1fa37b","b":"#85bb2f","c":"#ffcc00","d":"#ff6600","e":"#ee3333"}
         cols = st.columns(3)
         for i, (_, row) in enumerate(results.head(30).iterrows()):
             g = str(row.get("nutriscore_grade","?")).lower()
+            img = row.get("image_url","")
             with cols[i % 3]:
                 with st.container(border=True):
-                    st.markdown(f"**{str(row['product_name'])[:50]}**")
+                    if img and str(img) != "nan":
+                        st.image(str(img), use_container_width=True)
+                    else:
+                        st.markdown(
+                            "<div style='height:140px;background:#f0f0f0;border-radius:8px;"
+                            "display:flex;align-items:center;justify-content:center;"
+                            "font-size:2.5rem'>🛒</div>",
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown(f"**{str(row['product_name'])[:45]}**")
                     st.caption(f"🏷️ {row.get('brands','Inconnu')}")
-                    st.markdown(f"Nutri-Score : {grade_emoji.get(g,'⚪')} **{g.upper()}**")
+                    color = grade_color.get(g, "#888")
+                    st.markdown(
+                        f"<span style='background:{color};color:white;font-weight:700;"
+                        f"padding:2px 10px;border-radius:12px;font-size:0.95rem'>"
+                        f"Nutri-Score {g.upper()}</span>",
+                        unsafe_allow_html=True,
+                    )
+                    st.write("")
                     if row.get("sugars_100g"):
                         st.caption(f"🍬 Sucres : {row['sugars_100g']:.1f}g | 🧂 Sel : {row.get('salt_100g',0):.2f}g")
-                    if row.get("additives_n"):
-                        st.caption(f"⚗️ {int(row['additives_n'])} additifs")
+                    if row.get("additives_n") and int(row["additives_n"]) > 0:
+                        st.caption(f"⚗️ {int(row['additives_n'])} additif(s)")
 
 # ── PAGE 3 : Analyses ────────────────────────────────────────────────────
 elif page == "📊 Analyses détaillées":
