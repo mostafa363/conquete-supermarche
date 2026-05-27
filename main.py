@@ -31,14 +31,13 @@ def main():
         df_clean = pd.read_csv(CLEANED_CSV_PATH)
         print(f"  → {len(df_clean):,} produits chargés.")
 
-    # ── Étape 2 : Base de données ─────────────────────────────────
-    print("\n[3/6] Base de données PostgreSQL")
+    # ── Étape 2 : Base de données DuckDB ──────────────────────────
+    print("\n[3/6] Base de données DuckDB")
     try:
-        from src.database import init_db, insert_products
-        init_db()
-        insert_products(df_clean)
+        from src.database_duck import init_duckdb
+        init_duckdb(df_clean)
     except Exception as e:
-        print(f"  [WARN] PostgreSQL ignoré : {e}")
+        print(f"  [WARN] DuckDB ignoré : {e}")
 
     # ── Étape 3 : Analyse ─────────────────────────────────────────
     print("\n[4/6] Analyse exploratoire")
