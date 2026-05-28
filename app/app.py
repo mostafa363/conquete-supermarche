@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import sys
-import requests
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -14,9 +13,14 @@ from src.analysis import (
     describe_dataset,
 )
 from src.model import load_model, predict_nutriscore
+from src.fetcher import OpenFoodFactsFetcher
+from src.repository import ProductRepository
 
 NLP_MODEL_PATH  = MODEL_DIR / "nlp_nutriscore_clf.joblib"
 NLP_METRICS_PATH = MODEL_DIR / "nlp_metrics.json"
+
+_repo    = ProductRepository()
+_fetcher = OpenFoodFactsFetcher()
 
 ALLERGENS = {
     "Gluten":    ["gluten", "wheat", "farine de blé", "blé", "orge", "seigle"],
@@ -40,6 +44,24 @@ st.markdown("""
 <style>
     .big-title { font-size:2.4rem; font-weight:700; color:#1D7A5E; margin-bottom:0; }
     .subtitle  { color:#888; margin-top:0; margin-bottom:2rem; }
+    .prod-img-box {
+        height: 180px;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #f4f4f4;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 0.5rem;
+    }
+    .prod-img-box img {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+    }
+    .prod-card {
+        min-height: 340px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -89,25 +111,42 @@ def grade_badge(g: str) -> str:
 def product_card(row, col):
     g = str(row.get("nutriscore_grade", "?")).lower()
     img = row.get("image_url", "")
+    img_valid = img and str(img) not in ("nan", "None", "")
+
+    img_html = (
+        f"<div class='prod-img-box'><img src='{img}' "
+        f"onerror=\"this.parentElement.innerHTML='<span style=font-size:3rem>🛒</span>'\"/></div>"
+        if img_valid else
+        "<div class='prod-img-box'><span style='font-size:3rem'>🛒</span></div>"
+    )
+
+    sugars_txt = f"🍬 {row['sugars_100g']:.1f}g" if row.get("sugars_100g") else ""
+    salt_txt   = f"🧂 {row.get('salt_100g',0):.2f}g" if row.get("salt_100g") else ""
+    additif_txt = f"⚗️ {int(row['additives_n'])} additif(s)" if row.get("additives_n") and int(row["additives_n"]) > 0 else ""
+    color = COLORS.get(g, "#888")
+
+    card_html = f"""
+    <div style='border:1px solid #e0e0e0;border-radius:12px;padding:12px;
+                background:white;min-height:340px;display:flex;flex-direction:column;gap:6px;'>
+        {img_html}
+        <div style='font-weight:700;font-size:0.95rem;line-height:1.3;min-height:2.6em;overflow:hidden'>
+            {str(row['product_name'])[:50]}
+        </div>
+        <div style='color:#666;font-size:0.82rem'>🏷️ {str(row.get('brands','Inconnu'))[:30]}</div>
+        <div>
+            <span style='background:{color};color:white;font-weight:700;
+                         padding:2px 10px;border-radius:12px;font-size:0.88rem'>
+                Nutri-Score {g.upper()}
+            </span>
+        </div>
+        <div style='color:#666;font-size:0.8rem;margin-top:auto'>
+            {sugars_txt} {'|' if sugars_txt and salt_txt else ''} {salt_txt}
+        </div>
+        <div style='color:#888;font-size:0.8rem'>{additif_txt}</div>
+    </div>
+    """
     with col:
-        with st.container(border=True):
-            if img and str(img) != "nan":
-                st.image(str(img), use_container_width=True)
-            else:
-                st.markdown(
-                    "<div style='height:140px;background:#f0f0f0;border-radius:8px;"
-                    "display:flex;align-items:center;justify-content:center;"
-                    "font-size:2.5rem'>🛒</div>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown(f"**{str(row['product_name'])[:45]}**")
-            st.caption(f"🏷️ {row.get('brands','Inconnu')}")
-            st.markdown(grade_badge(g), unsafe_allow_html=True)
-            st.write("")
-            if row.get("sugars_100g"):
-                st.caption(f"🍬 Sucres : {row['sugars_100g']:.1f}g | 🧂 Sel : {row.get('salt_100g',0):.2f}g")
-            if row.get("additives_n") and int(row["additives_n"]) > 0:
-                st.caption(f"⚗️ {int(row['additives_n'])} additif(s)")
+        st.markdown(card_html, unsafe_allow_html=True)
 
 
 df    = load_data()
@@ -226,12 +265,12 @@ elif page == "🔍 Recherche produits":
         barcode = st.text_input("Code-barres EAN", placeholder="Ex: 3017620422003 (Nutella 400g)")
 
         if barcode.strip():
-            # Search locally first
-            local_match = df[df["code"].astype(str) == barcode.strip()] if not df.empty else pd.DataFrame()
+            # 1) ProductRepository — recherche en base DuckDB
+            local_match = _repo.find_by_barcode(barcode.strip())
 
             if not local_match.empty:
                 row = local_match.iloc[0]
-                st.success("Produit trouvé dans la base locale")
+                st.success("Produit trouvé dans la base locale (DuckDB)")
                 c1, c2 = st.columns([1, 2])
                 img = row.get("image_url", "")
                 with c1:
@@ -245,40 +284,33 @@ elif page == "🔍 Recherche produits":
                     if row.get("ingredients_text"):
                         st.markdown(f"**Ingrédients :** {str(row['ingredients_text'])[:300]}...")
             else:
-                # Fetch from Open Food Facts API
+                # 2) OpenFoodFactsFetcher — appel API si absent en base
                 with st.spinner("Recherche sur Open Food Facts..."):
-                    try:
-                        url = f"https://world.openfoodfacts.org/api/v2/product/{barcode.strip()}.json"
-                        headers = {"User-Agent": "SoGood/1.0 (educational project; mostafabouchamma@gmail.com)"}
-                        resp = requests.get(url, headers=headers, timeout=10)
-                        data = resp.json()
-                        if data.get("status") == 1:
-                            p = data["product"]
-                            g = p.get("nutriscore_grade", "?").lower()
-                            st.success("Produit trouvé sur Open Food Facts !")
-                            c1, c2 = st.columns([1, 2])
-                            with c1:
-                                img = p.get("image_url", "")
-                                if img:
-                                    st.image(img, use_container_width=True)
-                            with c2:
-                                st.markdown(f"### {p.get('product_name', 'Produit inconnu')}")
-                                st.markdown(grade_badge(g), unsafe_allow_html=True)
-                                st.markdown(f"**Marque :** {p.get('brands','N/A')}")
-                                st.markdown(f"**Catégorie :** {p.get('categories','N/A')}")
-                                nutriments = p.get("nutriments", {})
-                                col1, col2 = st.columns(2)
-                                col1.metric("⚡ Énergie", f"{nutriments.get('energy-kcal_100g',0):.0f} kcal")
-                                col1.metric("🍬 Sucres", f"{nutriments.get('sugars_100g',0):.1f}g")
-                                col2.metric("🧂 Sel", f"{nutriments.get('salt_100g',0):.2f}g")
-                                col2.metric("💪 Protéines", f"{nutriments.get('proteins_100g',0):.1f}g")
-                                ingr = p.get("ingredients_text", "")
-                                if ingr:
-                                    st.markdown(f"**Ingrédients :** {ingr[:300]}...")
-                        else:
-                            st.warning("Produit non trouvé sur Open Food Facts.")
-                    except Exception as e:
-                        st.error(f"Erreur API : {e}")
+                    p = _fetcher.fetch_by_barcode(barcode.strip())
+                    if p:
+                        g = p.get("nutriscore_grade", "?").lower()
+                        st.success("Produit trouvé sur Open Food Facts !")
+                        c1, c2 = st.columns([1, 2])
+                        with c1:
+                            img = p.get("image_url", "")
+                            if img:
+                                st.image(img, use_container_width=True)
+                        with c2:
+                            st.markdown(f"### {p.get('product_name', 'Produit inconnu')}")
+                            st.markdown(grade_badge(g), unsafe_allow_html=True)
+                            st.markdown(f"**Marque :** {p.get('brands','N/A')}")
+                            st.markdown(f"**Catégorie :** {p.get('categories','N/A')}")
+                            nutriments = p.get("nutriments", {})
+                            col1, col2 = st.columns(2)
+                            col1.metric("⚡ Énergie", f"{nutriments.get('energy-kcal_100g',0):.0f} kcal")
+                            col1.metric("🍬 Sucres", f"{nutriments.get('sugars_100g',0):.1f}g")
+                            col2.metric("🧂 Sel", f"{nutriments.get('salt_100g',0):.2f}g")
+                            col2.metric("💪 Protéines", f"{nutriments.get('proteins_100g',0):.1f}g")
+                            ingr = p.get("ingredients_text", "")
+                            if ingr:
+                                st.markdown(f"**Ingrédients :** {ingr[:300]}...")
+                    else:
+                        st.warning("Produit non trouvé sur Open Food Facts.")
 
 # ── PAGE 3 : Analyses ────────────────────────────────────────────────────
 elif page == "📊 Analyses détaillées":
@@ -468,22 +500,7 @@ elif page == "🔄 Substitution produits":
         st.markdown("---")
         st.subheader("✅ Alternatives plus saines")
 
-        from src.database_duck import get_substitutes
-        from pathlib import Path
-        duck_db = Path(__file__).parent.parent / "data" / "sogood.duckdb"
-
-        if duck_db.exists():
-            subs = get_substitutes(row, n=3)
-        else:
-            current_grade = g
-            grade_order = ["a","b","c","d","e"]
-            current_idx = grade_order.index(current_grade) if current_grade in grade_order else 4
-            better_grades = grade_order[:current_idx]
-            first_cat = str(row.get("categories_en","")).split(",")[0].strip()
-            subs = df[
-                df["nutriscore_grade"].isin(better_grades) &
-                df["categories_en"].str.lower().str.contains(first_cat.lower(), na=False)
-            ].head(3)
+        subs = _repo.find_substitutes(row, n=3)
 
         if subs.empty:
             st.warning("Aucune alternative trouvée dans la même catégorie. Essayez un autre produit.")
@@ -611,17 +628,12 @@ elif page == "🗄️ Explorateur DuckDB":
         "Table disponible : **`products`** avec toutes les colonnes nutritionnelles."
     )
 
-    from pathlib import Path
-    duck_db = Path(__file__).parent.parent / "data" / "sogood.duckdb"
-
-    if not duck_db.exists():
+    if _repo.count() == 0:
         st.warning("Base DuckDB non initialisée. Lance d'abord `python main.py`.")
         st.stop()
 
     with st.expander("📖 Schéma de la table `products`"):
-        from src.database_duck import run_sql
-        schema = run_sql("DESCRIBE products")
-        st.dataframe(schema, use_container_width=True)
+        st.dataframe(_repo.schema(), use_container_width=True)
 
     examples = {
         "Top 10 produits les plus sucrés": "SELECT product_name, brands, nutriscore_grade, sugars_100g FROM products ORDER BY sugars_100g DESC LIMIT 10",
@@ -638,9 +650,8 @@ elif page == "🗄️ Explorateur DuckDB":
     sql_query = st.text_area("Requête SQL", value=default_sql, height=120)
 
     if st.button("▶ Exécuter", type="primary"):
-        from src.database_duck import run_sql
         with st.spinner("Exécution..."):
-            result = run_sql(sql_query)
+            result = _repo.execute_sql(sql_query)
         if "error" in result.columns:
             st.error(result["error"].iloc[0])
         else:
