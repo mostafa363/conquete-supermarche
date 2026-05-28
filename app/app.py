@@ -15,12 +15,23 @@ from src.analysis import (
 from src.model import load_model, predict_nutriscore
 from src.fetcher import OpenFoodFactsFetcher
 from src.repository import ProductRepository
+from src.auth import (
+    init_auth_tables, register_user, login_user,
+    save_substitute, get_user_substitutes, delete_substitute,
+)
 
-NLP_MODEL_PATH  = MODEL_DIR / "nlp_nutriscore_clf.joblib"
+NLP_MODEL_PATH   = MODEL_DIR / "nlp_nutriscore_clf.joblib"
 NLP_METRICS_PATH = MODEL_DIR / "nlp_metrics.json"
+
+# Initialiser les tables auth au démarrage
+init_auth_tables()
 
 _repo    = ProductRepository()
 _fetcher = OpenFoodFactsFetcher()
+
+# ── Session state auth ──────────────────────────────────────────────────────
+if "user" not in st.session_state:
+    st.session_state.user = None
 
 ALLERGENS = {
     "Gluten":    ["gluten", "wheat", "farine de blé", "blé", "orge", "seigle"],
@@ -42,26 +53,462 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .big-title { font-size:2.4rem; font-weight:700; color:#1D7A5E; margin-bottom:0; }
-    .subtitle  { color:#888; margin-top:0; margin-bottom:2rem; }
-    .prod-img-box {
-        height: 180px;
-        overflow: hidden;
-        border-radius: 8px;
-        background: #f4f4f4;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 0.5rem;
-    }
-    .prod-img-box img {
-        width: 100%;
-        height: 180px;
-        object-fit: cover;
-    }
-    .prod-card {
-        min-height: 340px;
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+/* ── Base ───────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+html, body, [class*="css"], .stApp { font-family: 'Inter', sans-serif !important; }
+
+.stApp {
+    background: linear-gradient(145deg, #f7fffe 0%, #eef9f4 40%, #f0f5ff 100%);
+    background-attachment: fixed;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(29,122,94,0.35); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #1D7A5E; }
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #0c1c18 0%, #10261f 55%, #0a1e17 100%) !important;
+    border-right: 1px solid rgba(29,122,94,0.2) !important;
+    box-shadow: 4px 0 40px rgba(0,0,0,0.35) !important;
+}
+[data-testid="stSidebar"] > div:first-child { padding: 1.2rem 1rem 2rem !important; }
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] div { color: #a8d5c2 !important; }
+[data-testid="stSidebar"] h2 {
+    font-size: 1.5rem !important; font-weight: 900 !important;
+    color: #ffffff !important; letter-spacing: -0.5px;
+}
+
+/* ── Nav items ───────────────────────────────────────────── */
+[data-testid="stSidebar"] .stRadio > div > div { gap: 3px !important; display:flex !important; flex-direction:column !important; }
+
+/* Masquer le cercle radio natif sans casser les clics */
+[data-testid="stSidebar"] .stRadio input[type="radio"] {
+    appearance: none !important; -webkit-appearance: none !important;
+    width: 8px !important; height: 8px !important;
+    border-radius: 50% !important; flex-shrink: 0 !important;
+    background: rgba(29,122,94,0.4) !important;
+    border: none !important; outline: none !important;
+    margin-right: 10px !important; margin-left: 4px !important;
+    transition: all 0.2s ease !important;
+    cursor: pointer !important;
+}
+[data-testid="stSidebar"] .stRadio input[type="radio"]:checked {
+    background: #34d399 !important;
+    box-shadow: 0 0 8px rgba(52,211,153,0.7) !important;
+    width: 9px !important; height: 9px !important;
+}
+
+[data-testid="stSidebar"] .stRadio label {
+    padding: 10px 14px !important;
+    border-radius: 12px !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    transition: all 0.22s cubic-bezier(.4,0,.2,1) !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    border: 1px solid transparent !important;
+    color: #8bbfae !important;
+    line-height: 1.4 !important;
+    margin: 1px 0 !important;
+}
+[data-testid="stSidebar"] .stRadio label p {
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    color: inherit !important;
+    margin: 0 !important;
+    line-height: 1.4 !important;
+}
+
+/* Hover */
+[data-testid="stSidebar"] .stRadio label:hover {
+    background: rgba(29,122,94,0.18) !important;
+    color: #e0f5ed !important;
+    border-color: rgba(29,122,94,0.28) !important;
+    transform: translateX(4px) !important;
+}
+[data-testid="stSidebar"] .stRadio label:hover p { color: #e0f5ed !important; }
+[data-testid="stSidebar"] .stRadio label:hover input[type="radio"] {
+    background: #34d399 !important;
+    box-shadow: 0 0 6px rgba(52,211,153,0.55) !important;
+}
+
+/* Actif / sélectionné */
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background: linear-gradient(135deg, rgba(29,122,94,0.38) 0%, rgba(39,168,124,0.22) 100%) !important;
+    color: #ffffff !important;
+    border-color: rgba(52,211,153,0.35) !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 16px rgba(29,122,94,0.25), inset 0 1px 0 rgba(255,255,255,0.08) !important;
+}
+[data-testid="stSidebar"] .stRadio label:has(input:checked) p {
+    color: #ffffff !important;
+    font-weight: 700 !important;
+}
+
+[data-testid="stSidebar"] hr { border-color: rgba(29,122,94,0.2) !important; }
+[data-testid="stSidebar"] .stSuccess {
+    background: rgba(29,122,94,0.2) !important;
+    border: 1px solid rgba(29,122,94,0.4) !important;
+    border-radius: 12px !important;
+}
+[data-testid="stSidebar"] .stInfo {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid rgba(255,255,255,0.1) !important;
+    border-radius: 12px !important;
+}
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,255,255,0.07) !important;
+    color: #a8d5c2 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 10px !important;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(239,68,68,0.18) !important;
+    color: #fca5a5 !important;
+    border-color: rgba(239,68,68,0.3) !important;
+    transform: none !important;
+}
+
+/* Caption sous le logo */
+[data-testid="stSidebar"] .stCaption { color: #4d8c78 !important; font-size:.75rem !important; }
+
+/* Label filtres */
+[data-testid="stSidebar"] .stMarkdown strong { color: #c8e6dc !important; font-size:.72rem !important; letter-spacing:1.5px !important; text-transform:uppercase !important; }
+
+/* ── Main block ──────────────────────────────────────────── */
+.main .block-container { padding: 1.5rem 2.5rem 3rem; max-width: 1300px; }
+
+/* ── Animations ──────────────────────────────────────────── */
+@keyframes fadeInUp {
+    from { opacity:0; transform:translateY(20px); }
+    to   { opacity:1; transform:translateY(0); }
+}
+@keyframes fadeIn    { from { opacity:0; } to { opacity:1; } }
+@keyframes slideLeft {
+    from { opacity:0; transform:translateX(-16px); }
+    to   { opacity:1; transform:translateX(0); }
+}
+@keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(29,122,94,0.3); }
+    50%      { box-shadow: 0 0 0 8px rgba(29,122,94,0); }
+}
+@keyframes shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position:  200% center; }
+}
+
+.main .block-container > div > div {
+    animation: fadeInUp 0.45s ease both;
+}
+
+/* ── Headings ────────────────────────────────────────────── */
+h1 {
+    font-weight: 900 !important; letter-spacing: -1.2px !important;
+    background: linear-gradient(135deg, #1D7A5E 0%, #34d399 60%, #059669 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+h2 { font-weight: 700 !important; color: #1a2e28 !important; letter-spacing: -.4px !important; }
+h3 { font-weight: 600 !important; color: #2d4a44 !important; }
+
+/* ── Buttons ─────────────────────────────────────────────── */
+.stButton > button {
+    border-radius: 12px !important; font-weight: 600 !important;
+    font-size: 0.88rem !important; padding: 10px 22px !important;
+    transition: all 0.25s cubic-bezier(.4,0,.2,1) !important;
+    border: none !important;
+    background: linear-gradient(135deg, #1D7A5E, #27a87c) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 18px rgba(29,122,94,0.35) !important;
+}
+.stButton > button:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 10px 28px rgba(29,122,94,0.42) !important;
+    filter: brightness(1.06) !important;
+}
+.stButton > button:active { transform: translateY(0) !important; }
+
+/* ── Inputs ──────────────────────────────────────────────── */
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input {
+    border-radius: 12px !important; border: 2px solid #e2ecf0 !important;
+    padding: 10px 16px !important; font-size: 0.9rem !important;
+    transition: all .2s !important; background: #fff !important;
+}
+[data-testid="stTextInput"] input:focus,
+[data-testid="stTextArea"] textarea:focus,
+[data-testid="stNumberInput"] input:focus {
+    border-color: #1D7A5E !important;
+    box-shadow: 0 0 0 4px rgba(29,122,94,0.12) !important;
+    outline: none !important;
+}
+
+/* ── Select ──────────────────────────────────────────────── */
+[data-baseweb="select"] > div:first-child {
+    border-radius: 12px !important; border: 2px solid #e2ecf0 !important;
+    transition: border-color .2s !important;
+}
+[data-baseweb="select"] > div:first-child:focus-within {
+    border-color: #1D7A5E !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+[data-testid="stTabs"] [role="tablist"] {
+    background: rgba(255,255,255,.85); border-radius: 14px;
+    padding: 5px; border: 1.5px solid #e8f5f0;
+    backdrop-filter: blur(8px); gap: 4px;
+}
+[data-testid="stTabs"] [role="tab"] {
+    border-radius: 10px !important; font-weight: 600 !important;
+    font-size: 0.85rem !important; transition: all .2s !important;
+    border: none !important; color: #64748b !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    background: linear-gradient(135deg, #1D7A5E, #27a87c) !important;
+    color: #fff !important;
+    box-shadow: 0 4px 14px rgba(29,122,94,0.3) !important;
+}
+
+/* ── Metrics ─────────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: #fff; border-radius: 18px;
+    padding: 1.3rem 1.6rem;
+    border: 1.5px solid #e8f5f0;
+    box-shadow: 0 4px 22px rgba(0,0,0,0.055);
+    transition: all .3s ease; animation: fadeInUp .5s ease both;
+}
+[data-testid="stMetric"]:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(29,122,94,0.13);
+    border-color: #a7f3d0;
+}
+[data-testid="stMetric"] label {
+    color: #94a3b8 !important; font-size: .76rem !important;
+    font-weight: 700 !important; text-transform: uppercase;
+    letter-spacing: .8px !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 2rem !important; font-weight: 800 !important; color: #1a2e28 !important;
+}
+
+/* ── Alerts ──────────────────────────────────────────────── */
+[data-testid="stAlert"] { border-radius: 14px !important; border: none !important; }
+.stSuccess { background: linear-gradient(135deg,#d1fae5,#a7f3d0) !important; border-left: 4px solid #1D7A5E !important; }
+.stInfo    { background: linear-gradient(135deg,#dbeafe,#bfdbfe) !important; border-left: 4px solid #3b82f6 !important; }
+.stWarning { background: linear-gradient(135deg,#fef3c7,#fde68a) !important; border-left: 4px solid #f59e0b !important; }
+.stError   { background: linear-gradient(135deg,#fee2e2,#fecaca) !important; border-left: 4px solid #ef4444 !important; }
+
+/* ── DataFrame ───────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 16px !important; overflow: hidden !important;
+    border: 1.5px solid #e8f5f0 !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05) !important;
+}
+
+/* ── Containers ──────────────────────────────────────────── */
+[data-testid="stContainer"] { border-radius: 18px !important; }
+
+/* ── Divider ─────────────────────────────────────────────── */
+hr { border-color: #e8f5f0 !important; margin: 1.5rem 0 !important; }
+
+/* ──────────────────────── CUSTOM CLASSES ──────────────────── */
+
+/* Hero */
+.hero-wrap {
+    padding: 2.5rem 0 1.5rem;
+    animation: fadeInUp .6s ease;
+}
+.hero-eyebrow {
+    font-size: .72rem; font-weight: 700; letter-spacing: 2.5px;
+    text-transform: uppercase; color: #1D7A5E;
+    background: rgba(29,122,94,.1); display: inline-block;
+    padding: 4px 14px; border-radius: 100px; margin-bottom: 1rem;
+}
+.hero-title {
+    font-size: 3.4rem; font-weight: 900; line-height: 1.05;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #1D7A5E 0%, #34d399 55%, #059669 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; margin-bottom: .6rem;
+}
+.hero-sub {
+    font-size: 1.05rem; color: #64748b; font-weight: 400;
+    max-width: 640px; line-height: 1.7;
+}
+.hero-stats {
+    display: flex; gap: 2rem; margin-top: 1.5rem; flex-wrap: wrap;
+}
+.hero-stat { display: flex; flex-direction: column; gap: 2px; }
+.hero-stat-val { font-size: 1.6rem; font-weight: 800; color: #1a2e28; letter-spacing: -.5px; }
+.hero-stat-lbl { font-size: .72rem; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: .8px; }
+
+/* KPI cards */
+.kpi-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-bottom: 2rem; }
+.kpi-card {
+    background: #fff; border-radius: 20px; padding: 1.4rem 1.6rem;
+    border: 1.5px solid #e8f5f0;
+    box-shadow: 0 4px 24px rgba(0,0,0,.055);
+    transition: all .3s cubic-bezier(.4,0,.2,1);
+    position: relative; overflow: hidden;
+    animation: fadeInUp .5s ease both;
+}
+.kpi-card::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:3px;
+    background: linear-gradient(90deg, #1D7A5E, #34d399);
+    border-radius: 20px 20px 0 0;
+}
+.kpi-card:hover { transform: translateY(-5px); box-shadow: 0 24px 50px rgba(29,122,94,.14); border-color: #a7f3d0; }
+.kpi-icon { font-size: 1.8rem; margin-bottom: .5rem; }
+.kpi-value { font-size: 2rem; font-weight: 900; color: #1a2e28; letter-spacing: -.5px; line-height: 1; }
+.kpi-label { font-size: .72rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .8px; margin-top: .35rem; }
+
+/* Page header */
+.page-hdr {
+    background: linear-gradient(135deg, rgba(29,122,94,.07) 0%, rgba(52,211,153,.04) 100%);
+    border-radius: 20px; padding: 1.8rem 2.2rem; margin-bottom: 1.8rem;
+    border: 1.5px solid rgba(29,122,94,.1);
+    animation: fadeIn .45s ease;
+}
+.page-hdr h2 { margin: 0 0 .3rem; color: #1a2e28 !important; }
+.page-hdr p  { margin: 0; color: #64748b; font-size: .9rem; }
+
+/* Product card */
+.pc {
+    background: #fff; border-radius: 20px; padding: 14px;
+    border: 1.5px solid #f0f5f2;
+    box-shadow: 0 2px 18px rgba(0,0,0,.055);
+    transition: all .3s cubic-bezier(.4,0,.2,1);
+    display: flex; flex-direction: column; gap: 8px; height: 100%;
+    animation: fadeInUp .4s ease both;
+    position: relative; overflow: hidden;
+}
+.pc::after {
+    content:''; position:absolute; inset:0;
+    background: linear-gradient(135deg, transparent 65%, rgba(29,122,94,.04) 100%);
+    opacity:0; transition: opacity .3s;
+}
+.pc:hover { transform: translateY(-7px) scale(1.015); box-shadow: 0 28px 55px rgba(0,0,0,.12); border-color: #a7f3d0; }
+.pc:hover::after { opacity: 1; }
+.pc-img {
+    width:100%; height:160px; object-fit:cover;
+    border-radius: 12px; background: linear-gradient(135deg,#f0fdf4,#dcfce7);
+}
+.pc-img-placeholder {
+    width:100%; height:160px; border-radius:12px;
+    background: linear-gradient(135deg,#f0fdf4,#e8f5e9);
+    display:flex; align-items:center; justify-content:center; font-size:3rem;
+}
+.pc-name { font-weight:700; font-size:.92rem; line-height:1.35; color:#1a2e28; min-height:2.5em; overflow:hidden; }
+.pc-brand { color:#94a3b8; font-size:.78rem; font-weight:500; }
+.pc-nutrients { color:#64748b; font-size:.78rem; display:flex; gap:8px; flex-wrap:wrap; margin-top:auto; }
+
+/* Nutri-Score badge */
+.ns-badge {
+    display:inline-flex; align-items:center; gap:5px;
+    padding: 5px 13px; border-radius:100px;
+    font-weight:800; font-size:.8rem; letter-spacing:.3px;
+    box-shadow: 0 3px 10px rgba(0,0,0,.18);
+    transition: all .2s; color: #fff;
+}
+.ns-badge:hover { transform: scale(1.06); box-shadow: 0 5px 18px rgba(0,0,0,.22); }
+
+/* Section label */
+.sect {
+    font-size:.72rem; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+    color:#1D7A5E; margin-bottom:.8rem;
+    display:flex; align-items:center; gap:8px;
+}
+.sect::after { content:''; flex:1; height:1.5px; background:linear-gradient(90deg,#e8f5f0,transparent); }
+
+/* ── Sidebar filter section headers ─────────────────────── */
+.sb-section-hdr {
+    display: flex; align-items: center; gap: 7px;
+    font-size: .68rem !important; font-weight: 800 !important;
+    letter-spacing: 1.6px !important; text-transform: uppercase !important;
+    color: #3d8c72 !important;
+    margin: 1rem 0 .55rem 2px !important;
+    padding-bottom: 6px !important;
+    border-bottom: 1px solid rgba(29,122,94,0.2) !important;
+}
+.sb-section-icon { font-size: .8rem; }
+
+/* ── Sidebar widgets (multiselect / selectbox) ───────────── */
+[data-testid="stSidebar"] .stMultiSelect label,
+[data-testid="stSidebar"] .stSelectbox label {
+    font-size: .75rem !important; font-weight: 600 !important;
+    color: #5fa08a !important; letter-spacing: .4px !important;
+    margin-bottom: 3px !important;
+}
+
+/* Select container */
+[data-testid="stSidebar"] [data-baseweb="select"] > div:first-child {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1.5px solid rgba(29,122,94,0.3) !important;
+    border-radius: 10px !important;
+    transition: border-color .2s, box-shadow .2s !important;
+    min-height: 38px !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] > div:first-child:focus-within {
+    border-color: rgba(52,211,153,0.55) !important;
+    box-shadow: 0 0 0 3px rgba(52,211,153,0.1) !important;
+}
+
+/* Placeholder & value text */
+[data-testid="stSidebar"] [data-baseweb="select"] [data-testid="stSelectboxVirtualDropdown"],
+[data-testid="stSidebar"] [data-baseweb="select"] > div > div > div {
+    color: #a8d5c2 !important; font-size: .82rem !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] input {
+    color: #c8e6dc !important;
+}
+
+/* Dropdown arrow icon */
+[data-testid="stSidebar"] [data-baseweb="select"] svg {
+    fill: #4d8c78 !important;
+}
+
+/* Multiselect chips */
+[data-testid="stSidebar"] [data-baseweb="tag"] {
+    background: rgba(29,122,94,0.32) !important;
+    border: 1px solid rgba(52,211,153,0.28) !important;
+    border-radius: 8px !important;
+    padding: 2px 6px !important;
+    margin: 2px !important;
+}
+[data-testid="stSidebar"] [data-baseweb="tag"] span {
+    color: #a7f3d0 !important;
+    font-size: .75rem !important;
+    font-weight: 700 !important;
+}
+/* X close sur les chips */
+[data-testid="stSidebar"] [data-baseweb="tag"] [role="button"],
+[data-testid="stSidebar"] [data-baseweb="tag"] button {
+    color: #6ee7b7 !important;
+    opacity: .7 !important;
+}
+[data-testid="stSidebar"] [data-baseweb="tag"] [role="button"]:hover {
+    opacity: 1 !important; color: #f87171 !important;
+}
+
+/* ── Legacy compat ───────────────────────────────────────── */
+.big-title  { font-size:2.4rem; font-weight:900; color:#1D7A5E; margin-bottom:0; }
+.subtitle   { color:#888; margin-top:0; margin-bottom:2rem; }
+.prod-img-box {
+    height:165px; overflow:hidden; border-radius:12px;
+    background: linear-gradient(135deg,#f0fdf4,#e8f5e9);
+    display:flex; align-items:center; justify-content:center; margin-bottom:.5rem;
+}
+.prod-img-box img { width:100%; height:165px; object-fit:cover; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -101,10 +548,11 @@ def get_nlp_model():
 
 def grade_badge(g: str) -> str:
     color = COLORS.get(g, "#888")
+    icons = {"a": "🌿", "b": "✅", "c": "⚠️", "d": "🔶", "e": "❌"}
+    icon = icons.get(g, "")
     return (
-        f"<span style='background:{color};color:white;font-weight:700;"
-        f"padding:2px 10px;border-radius:12px;font-size:0.95rem'>"
-        f"Nutri-Score {g.upper()}</span>"
+        f"<span class='ns-badge' style='background:{color}'>"
+        f"{icon} Nutri-Score {g.upper()}</span>"
     )
 
 
@@ -114,35 +562,31 @@ def product_card(row, col):
     img_valid = img and str(img) not in ("nan", "None", "")
 
     img_html = (
-        f"<div class='prod-img-box'><img src='{img}' "
-        f"onerror=\"this.parentElement.innerHTML='<span style=font-size:3rem>🛒</span>'\"/></div>"
+        f"<img class='pc-img' src='{img}' "
+        f"onerror=\"this.outerHTML='<div class=\\'pc-img-placeholder\\'>🛒</div>'\"/>"
         if img_valid else
-        "<div class='prod-img-box'><span style='font-size:3rem'>🛒</span></div>"
+        "<div class='pc-img-placeholder'>🛒</div>"
     )
 
-    sugars_txt = f"🍬 {row['sugars_100g']:.1f}g" if row.get("sugars_100g") else ""
-    salt_txt   = f"🧂 {row.get('salt_100g',0):.2f}g" if row.get("salt_100g") else ""
-    additif_txt = f"⚗️ {int(row['additives_n'])} additif(s)" if row.get("additives_n") and int(row["additives_n"]) > 0 else ""
+    sugars_txt  = f"🍬 {row['sugars_100g']:.1f}g" if row.get("sugars_100g") else ""
+    salt_txt    = f"🧂 {row.get('salt_100g',0):.2f}g" if row.get("salt_100g") else ""
+    additif_txt = f"⚗️ {int(row['additives_n'])}add" if row.get("additives_n") and int(row["additives_n"]) > 0 else ""
     color = COLORS.get(g, "#888")
+    icons = {"a": "🌿", "b": "✅", "c": "⚠️", "d": "🔶", "e": "❌"}
+    icon = icons.get(g, "")
+
+    nutrients_parts = [p for p in [sugars_txt, salt_txt, additif_txt] if p]
+    nutrients_html = "".join(f"<span>{p}</span>" for p in nutrients_parts)
 
     card_html = f"""
-    <div style='border:1px solid #e0e0e0;border-radius:12px;padding:12px;
-                background:white;min-height:340px;display:flex;flex-direction:column;gap:6px;'>
+    <div class='pc'>
         {img_html}
-        <div style='font-weight:700;font-size:0.95rem;line-height:1.3;min-height:2.6em;overflow:hidden'>
-            {str(row['product_name'])[:50]}
-        </div>
-        <div style='color:#666;font-size:0.82rem'>🏷️ {str(row.get('brands','Inconnu'))[:30]}</div>
-        <div>
-            <span style='background:{color};color:white;font-weight:700;
-                         padding:2px 10px;border-radius:12px;font-size:0.88rem'>
-                Nutri-Score {g.upper()}
-            </span>
-        </div>
-        <div style='color:#666;font-size:0.8rem;margin-top:auto'>
-            {sugars_txt} {'|' if sugars_txt and salt_txt else ''} {salt_txt}
-        </div>
-        <div style='color:#888;font-size:0.8rem'>{additif_txt}</div>
+        <div class='pc-name'>{str(row['product_name'])[:55]}</div>
+        <div class='pc-brand'>🏷️ {str(row.get('brands','Inconnu'))[:30]}</div>
+        <span class='ns-badge' style='background:{color};align-self:flex-start'>
+            {icon} {g.upper()}
+        </span>
+        <div class='pc-nutrients'>{nutrients_html}</div>
     </div>
     """
     with col:
@@ -158,7 +602,18 @@ with st.sidebar:
     st.caption("Analyse nutritionnelle des supermarchés")
     st.divider()
 
-    page = st.radio("", [
+    # Statut connexion
+    if st.session_state.user:
+        st.success(f"👤 {st.session_state.user['username']}")
+        if st.button("Déconnexion", use_container_width=True):
+            st.session_state.user = None
+            st.rerun()
+    else:
+        st.info("👤 Non connecté")
+
+    st.divider()
+
+    pages_base = [
         "🏠 Dashboard",
         "🔍 Recherche produits",
         "📊 Analyses détaillées",
@@ -167,10 +622,19 @@ with st.sidebar:
         "🔄 Substitution produits",
         "⚖️ Comparaison produits",
         "🗄️ Explorateur DuckDB",
-    ], label_visibility="collapsed")
+        "👤 Connexion / Inscription",
+    ]
+    if st.session_state.user:
+        pages_base.append("💾 Mes substituts sauvegardés")
 
-    st.divider()
-    st.markdown("**Filtres globaux**")
+    page = st.radio("", pages_base, label_visibility="collapsed")
+
+    st.markdown("""
+    <div class="sb-section-hdr">
+        <span class="sb-section-icon">⚙️</span>
+        <span>Filtres globaux</span>
+    </div>
+    """, unsafe_allow_html=True)
 
     ns_filter = st.multiselect(
         "Nutri-Score", ["a","b","c","d","e"],
@@ -185,8 +649,12 @@ with st.sidebar:
         )[:80]
         cat_filter = st.selectbox("Catégorie", cats)
 
-    st.divider()
-    st.markdown("**Allergènes à exclure**")
+    st.markdown("""
+    <div class="sb-section-hdr" style="margin-top:.6rem">
+        <span class="sb-section-icon">🚫</span>
+        <span>Allergènes à exclure</span>
+    </div>
+    """, unsafe_allow_html=True)
     allergens_selected = st.multiselect(
         "Exclure", list(ALLERGENS.keys()), default=[]
     )
@@ -207,21 +675,70 @@ else:
 
 # ── PAGE 1 : Dashboard ───────────────────────────────────────────────────
 if page == "🏠 Dashboard":
-    st.markdown('<p class="big-title">🥦 SoGood</p>', unsafe_allow_html=True)
-    st.markdown('<p class="subtitle">Plateforme d\'analyse de la qualité nutritionnelle</p>', unsafe_allow_html=True)
-
     if df.empty:
         st.warning("⚠️ Aucune donnée. Lance d'abord `python main.py`")
         st.stop()
 
     s = describe_dataset(dff)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🛒 Produits",      f"{s['n_products']:,}")
-    c2.metric("🏷️ Marques",       f"{s['n_brands']:,}")
-    c3.metric("📂 Catégories",    f"{s['n_categories']:,}")
-    c4.metric("⚗️ Additifs moy.", f"{s['avg_additives']:.1f}")
 
-    st.divider()
+    st.markdown(f"""
+    <div class="hero-wrap">
+        <div class="hero-eyebrow">OPEN FOOD FACTS · ANALYSE IA</div>
+        <div class="hero-title">Mangez mieux,<br>chaque jour.</div>
+        <p class="hero-sub">
+            SoGood analyse {s['n_products']:,} produits alimentaires avec un moteur XGBoost
+            et NLP multilingue pour vous aider à faire les meilleurs choix nutritionnels.
+        </p>
+        <div class="hero-stats">
+            <div class="hero-stat">
+                <span class="hero-stat-val">{s['n_products']:,}</span>
+                <span class="hero-stat-lbl">Produits</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-val">{s['n_brands']:,}</span>
+                <span class="hero-stat-lbl">Marques</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-val">{s['n_categories']:,}</span>
+                <span class="hero-stat-lbl">Catégories</span>
+            </div>
+            <div class="hero-stat">
+                <span class="hero-stat-val">93.6%</span>
+                <span class="hero-stat-lbl">Précision IA</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    pct_ab = 100 * len(dff[dff["nutriscore_grade"].isin(["a","b"])]) / max(len(dff), 1)
+    avg_sugar = dff["sugars_100g"].mean() if "sugars_100g" in dff.columns else 0
+    avg_salt  = dff["salt_100g"].mean()   if "salt_100g"   in dff.columns else 0
+
+    st.markdown(f"""
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-icon">🛒</div>
+            <div class="kpi-value">{s['n_products']:,}</div>
+            <div class="kpi-label">Produits analysés</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">🌿</div>
+            <div class="kpi-value">{pct_ab:.0f}%</div>
+            <div class="kpi-label">Nutri-Score A ou B</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">🍬</div>
+            <div class="kpi-value">{avg_sugar:.1f}g</div>
+            <div class="kpi-label">Sucres moy. / 100g</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">⚗️</div>
+            <div class="kpi-value">{s['avg_additives']:.1f}</div>
+            <div class="kpi-label">Additifs moy.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     c1, c2 = st.columns(2)
     c1.plotly_chart(plot_nutriscore_distribution(dff), use_container_width=True)
     c2.plotly_chart(plot_additives_vs_nutriscore(dff), use_container_width=True)
@@ -231,7 +748,12 @@ if page == "🏠 Dashboard":
 
 # ── PAGE 2 : Recherche ───────────────────────────────────────────────────
 elif page == "🔍 Recherche produits":
-    st.header("🔍 Recherche de produits")
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🔍 Recherche de produits</h2>
+        <p>Trouvez un produit par nom, catégorie ou code-barres EAN parmi les 52 000+ références.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     tab_search, tab_barcode = st.tabs(["🔎 Recherche textuelle", "📷 Recherche par code-barres"])
 
@@ -314,7 +836,12 @@ elif page == "🔍 Recherche produits":
 
 # ── PAGE 3 : Analyses ────────────────────────────────────────────────────
 elif page == "📊 Analyses détaillées":
-    st.header("📊 Analyses nutritionnelles")
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>📊 Analyses nutritionnelles</h2>
+        <p>Distributions, corrélations et importance des variables du modèle XGBoost.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     t1, t2, t3, t4 = st.tabs(["📊 Distributions", "🔗 Corrélations", "🍬 Sucres & Sel", "🏆 Feature Importance"])
 
@@ -360,8 +887,12 @@ elif page == "📊 Analyses détaillées":
 
 # ── PAGE 4 : Prédiction XGBoost ──────────────────────────────────────────
 elif page == "🤖 Prédiction IA":
-    st.header("🤖 Prédiction Nutri-Score — XGBoost (valeurs nutritionnelles)")
-    st.info("Renseignez les valeurs nutritionnelles pour 100g.")
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🤖 Prédiction Nutri-Score — XGBoost</h2>
+        <p>Renseignez les valeurs nutritionnelles pour 100g et obtenez une prédiction instantanée.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     if model is None:
         st.error("Modèle non disponible. Lance `python main.py`")
@@ -390,22 +921,28 @@ elif page == "🤖 Prédiction IA":
             "proteins_100g": proteins, "salt_100g": salt, "additives_n": additives,
         }
         grade = predict_nutriscore(model, vals)
+        icons = {"a": "🌿", "b": "✅", "c": "⚠️", "d": "🔶", "e": "❌"}
         st.markdown(f"""
-        <div style="background:{COLORS[grade]}22; border:2px solid {COLORS[grade]};
-                    border-radius:12px; padding:1.5rem; text-align:center; margin-top:1rem">
-            <div style="font-size:3rem; font-weight:700; color:{COLORS[grade]}">{grade.upper()}</div>
-            <div style="font-size:1.1rem; color:#333; margin-top:0.5rem">{LABELS[grade]}</div>
+        <div style="background:linear-gradient(135deg,{COLORS[grade]}18,{COLORS[grade]}08);
+                    border:2px solid {COLORS[grade]}60; border-radius:20px;
+                    padding:2.5rem; text-align:center; margin-top:1.5rem;
+                    animation:fadeInUp .5s ease;">
+            <div style="font-size:5rem;margin-bottom:.5rem">{icons.get(grade,'')}</div>
+            <div style="font-size:4rem;font-weight:900;color:{COLORS[grade]};letter-spacing:-2px;
+                        line-height:1">{grade.upper()}</div>
+            <div style="font-size:1.1rem;color:#444;margin-top:.8rem;font-weight:500">{LABELS[grade]}</div>
         </div>
         """, unsafe_allow_html=True)
         st.progress(["a","b","c","d","e"].index(grade) / 4)
 
 # ── PAGE 5 : Prédiction NLP ──────────────────────────────────────────────
 elif page == "🧠 Prédiction NLP (Hugging Face)":
-    st.header("🧠 Prédiction Nutri-Score — NLP Hugging Face")
-    st.info(
-        "Modèle : **paraphrase-multilingual-MiniLM-L12-v2** (Hugging Face sentence-transformers)  \n"
-        "Entrez le nom et/ou la liste des ingrédients du produit — le modèle NLP prédit le Nutri-Score."
-    )
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🧠 Prédiction NLP — Hugging Face Transformers</h2>
+        <p>Modèle : <strong>paraphrase-multilingual-MiniLM-L12-v2</strong> — entrez le nom et les ingrédients, l'IA prédit le Nutri-Score.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     with st.expander("ℹ️ Comment ça fonctionne ?"):
         st.markdown("""
@@ -433,11 +970,16 @@ elif page == "🧠 Prédiction NLP (Hugging Face)":
             from src.nlp_model import predict_nutriscore_nlp
             grade, probas = predict_nutriscore_nlp(embedder, nlp_clf, text)
 
+            icons = {"a": "🌿", "b": "✅", "c": "⚠️", "d": "🔶", "e": "❌"}
             st.markdown(f"""
-            <div style="background:{COLORS[grade]}22; border:2px solid {COLORS[grade]};
-                        border-radius:12px; padding:1.5rem; text-align:center; margin-top:1rem">
-                <div style="font-size:3rem; font-weight:700; color:{COLORS[grade]}">{grade.upper()}</div>
-                <div style="font-size:1.1rem; color:#333; margin-top:0.5rem">{LABELS[grade]}</div>
+            <div style="background:linear-gradient(135deg,{COLORS[grade]}18,{COLORS[grade]}08);
+                        border:2px solid {COLORS[grade]}60; border-radius:20px;
+                        padding:2.5rem; text-align:center; margin-top:1.5rem;
+                        animation:fadeInUp .5s ease;">
+                <div style="font-size:5rem;margin-bottom:.5rem">{icons.get(grade,'')}</div>
+                <div style="font-size:4rem;font-weight:900;color:{COLORS[grade]};letter-spacing:-2px;
+                            line-height:1">{grade.upper()}</div>
+                <div style="font-size:1.1rem;color:#444;margin-top:.8rem;font-weight:500">{LABELS[grade]}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -460,11 +1002,12 @@ elif page == "🧠 Prédiction NLP (Hugging Face)":
 
 # ── PAGE 6 : Substitution ────────────────────────────────────────────────
 elif page == "🔄 Substitution produits":
-    st.header("🔄 Moteur de substitution")
-    st.info(
-        "Choisissez un produit de mauvaise qualité nutritionnelle (D ou E) "
-        "et découvrez des alternatives plus saines dans la même catégorie."
-    )
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🔄 Moteur de substitution</h2>
+        <p>Choisissez un produit Nutri-Score C/D/E et découvrez des alternatives plus saines dans la même catégorie.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     if df.empty:
         st.warning("⚠️ Aucune donnée. Lance d'abord `python main.py`")
@@ -527,10 +1070,31 @@ elif page == "🔄 Substitution produits":
                         col1.metric("⚡", f"{sub_row.get('energy_100g',0):.0f}")
                         col2.metric("🍬", f"{sub_row.get('sugars_100g',0):.1f}g")
 
+                        if st.session_state.user:
+                            btn_key = f"save_{i}_{sub_row.get('code','')}"
+                            if st.button("💾 Sauvegarder", key=btn_key, use_container_width=True):
+                                saved = save_substitute(
+                                    user_id        = st.session_state.user["user_id"],
+                                    product_code   = str(row.get("code", "")),
+                                    product_name   = str(row.get("product_name", "")),
+                                    substitute_code= str(sub_row.get("code", "")),
+                                    substitute_name= str(sub_row.get("product_name", "")),
+                                )
+                                if saved:
+                                    st.success("Substitut sauvegardé !")
+                                else:
+                                    st.info("Déjà sauvegardé.")
+                        else:
+                            st.caption("🔒 Connectez-vous pour sauvegarder")
+
 # ── PAGE 7 : Comparaison ─────────────────────────────────────────────────
 elif page == "⚖️ Comparaison produits":
-    st.header("⚖️ Comparaison nutritionnelle de 2 produits")
-    st.info("Sélectionnez deux produits pour comparer leurs valeurs nutritionnelles côte à côte.")
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>⚖️ Comparaison nutritionnelle</h2>
+        <p>Sélectionnez deux produits pour comparer leurs valeurs côte à côte avec un radar interactif.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     if df.empty:
         st.warning("⚠️ Aucune donnée. Lance d'abord `python main.py`")
@@ -620,13 +1184,106 @@ elif page == "⚖️ Comparaison produits":
     )
     st.plotly_chart(fig, use_container_width=True)
 
+# ── PAGE 9 : Connexion / Inscription ────────────────────────────────────────
+elif page == "👤 Connexion / Inscription":
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>👤 Connexion / Inscription</h2>
+        <p>Créez un compte pour sauvegarder vos substituts préférés et retrouver vos analyses.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.session_state.user:
+        st.success(f"Vous êtes connecté en tant que **{st.session_state.user['username']}**")
+        if st.button("Se déconnecter", type="primary"):
+            st.session_state.user = None
+            st.rerun()
+    else:
+        tab_login, tab_register = st.tabs(["🔑 Connexion", "📝 Inscription"])
+
+        with tab_login:
+            st.subheader("Se connecter")
+            with st.form("login_form"):
+                lu = st.text_input("Nom d'utilisateur")
+                lp = st.text_input("Mot de passe", type="password")
+                submitted = st.form_submit_button("Se connecter", use_container_width=True)
+            if submitted:
+                if lu and lp:
+                    result = login_user(lu, lp)
+                    if result["success"]:
+                        st.session_state.user = result
+                        st.success(f"Bienvenue, **{result['username']}** !")
+                        st.rerun()
+                    else:
+                        st.error(result["error"])
+                else:
+                    st.warning("Remplissez tous les champs.")
+
+        with tab_register:
+            st.subheader("Créer un compte")
+            with st.form("register_form"):
+                ru = st.text_input("Nom d'utilisateur")
+                re = st.text_input("Email")
+                rp = st.text_input("Mot de passe", type="password")
+                rp2 = st.text_input("Confirmer le mot de passe", type="password")
+                submitted = st.form_submit_button("S'inscrire", use_container_width=True)
+            if submitted:
+                if not (ru and re and rp):
+                    st.warning("Remplissez tous les champs.")
+                elif rp != rp2:
+                    st.error("Les mots de passe ne correspondent pas.")
+                else:
+                    result = register_user(ru, re, rp)
+                    if result["success"]:
+                        st.session_state.user = result
+                        st.success(f"Compte créé ! Bienvenue, **{result['username']}** !")
+                        st.rerun()
+                    else:
+                        st.error(result["error"])
+
+# ── PAGE 10 : Mes substituts ─────────────────────────────────────────────────
+elif page == "💾 Mes substituts sauvegardés":
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>💾 Mes substituts sauvegardés</h2>
+        <p>Retrouvez toutes vos alternatives nutritionnelles enregistrées.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if not st.session_state.user:
+        st.warning("Connectez-vous pour accéder à vos substituts.")
+        st.stop()
+
+    user_id = st.session_state.user["user_id"]
+    subs_df = get_user_substitutes(user_id)
+
+    if subs_df.empty:
+        st.info("Vous n'avez pas encore sauvegardé de substituts. Utilisez la page **Substitution produits** pour en ajouter.")
+    else:
+        st.success(f"**{len(subs_df)}** substitut(s) sauvegardé(s)")
+        for _, r in subs_df.iterrows():
+            with st.container(border=True):
+                c1, c2, c3 = st.columns([3, 3, 1])
+                with c1:
+                    st.markdown(f"**Produit original**")
+                    st.markdown(f"🛒 {r.get('product_name', 'N/A')}")
+                with c2:
+                    st.markdown(f"**Substitut healthier**")
+                    st.markdown(f"✅ {r.get('substitute_name', 'N/A')}")
+                with c3:
+                    st.caption(str(r.get("saved_at", ""))[:10])
+                    if st.button("🗑️", key=f"del_{r['id']}", help="Supprimer"):
+                        delete_substitute(int(r["id"]), user_id)
+                        st.rerun()
+
 # ── PAGE 8 : DuckDB Explorer ─────────────────────────────────────────────
 elif page == "🗄️ Explorateur DuckDB":
-    st.header("🗄️ Explorateur DuckDB")
-    st.info(
-        "Interrogez directement la base DuckDB avec du SQL.  \n"
-        "Table disponible : **`products`** avec toutes les colonnes nutritionnelles."
-    )
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🗄️ Explorateur DuckDB</h2>
+        <p>Interrogez directement la base avec du SQL — table <code>products</code> avec toutes les colonnes nutritionnelles.</p>
+    </div>
+    """, unsafe_allow_html=True)
 
     if _repo.count() == 0:
         st.warning("Base DuckDB non initialisée. Lance d'abord `python main.py`.")

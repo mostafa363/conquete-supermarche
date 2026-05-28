@@ -13,7 +13,7 @@ import pandas as pd
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from config import RAW_CSV_PATH, CLEANED_CSV_PATH, MODEL_PATH, MODEL_DIR
+from config import RAW_CSV_PATH, CLEANED_CSV_PATH, MODEL_PATH, MODEL_DIR, OFF_DUMP_CSV_PATH
 
 NLP_MODEL_PATH = MODEL_DIR / "nlp_nutriscore_clf.joblib"
 
@@ -33,7 +33,11 @@ def main():
         df_clean = pd.read_csv(CLEANED_CSV_PATH)
         print(f"  → {len(df_clean):,} produits chargés.")
     else:
-        if RAW_CSV_PATH.exists():
+        if OFF_DUMP_CSV_PATH.exists():
+            print("  → Dump OpenFoodFacts détecté, chargement de 300 000 lignes...")
+            df_raw = fetcher.load_full_dump(sample_n=300_000)
+            fetcher.save_raw(df_raw)
+        elif RAW_CSV_PATH.exists():
             print("  → Chargement du CSV brut existant.")
             df_raw = fetcher.load_raw()
         else:
@@ -88,7 +92,8 @@ def main():
         mlflow.set_experiment("sogood-nutriscore")
         with mlflow.start_run(run_name="nlp_sentence_transformers"):
             from src.nlp_model import train_nlp_model
-            metrics_nlp, _, _ = train_nlp_model(df_clean)
+            df_nlp = df_clean.sample(min(30_000, len(df_clean)), random_state=42)
+            metrics_nlp, _, _ = train_nlp_model(df_nlp)
             mlflow.log_metric("accuracy", metrics_nlp["accuracy"])
             mlflow.log_metric("f1_score", metrics_nlp["f1_score"])
             mlflow.log_param("model_type", "SentenceTransformer+LR")

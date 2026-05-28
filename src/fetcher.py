@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import RAW_CSV_PATH, USEFUL_COLUMNS
+from config import RAW_CSV_PATH, USEFUL_COLUMNS, OFF_DUMP_CSV_PATH
 
 _USER_AGENT = "SoGood/1.0 (educational project; mostafabouchamma@gmail.com)"
 _SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
@@ -74,6 +74,23 @@ class OpenFoodFactsFetcher:
         RAW_CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(RAW_CSV_PATH, index=False)
         print(f"[Fetcher] Raw CSV sauvegardé : {RAW_CSV_PATH} ({len(df):,} lignes)")
+
+    def load_full_dump(self, sample_n: int = 300_000) -> pd.DataFrame:
+        """Charge un échantillon depuis le dump complet OpenFoodFacts (TSV ~2GB)."""
+        if not OFF_DUMP_CSV_PATH.exists():
+            raise FileNotFoundError(f"Dump OFF introuvable : {OFF_DUMP_CSV_PATH}")
+        print(f"[Fetcher] Chargement dump OFF — {sample_n:,} premières lignes...")
+        df = pd.read_csv(
+            OFF_DUMP_CSV_PATH,
+            sep="\t",
+            usecols=lambda c: c in USEFUL_COLUMNS,
+            low_memory=False,
+            encoding="utf-8",
+            on_bad_lines="skip",
+            nrows=sample_n,
+        )
+        print(f"[Fetcher] {len(df):,} lignes chargées depuis le dump OFF.")
+        return df
 
     def load_raw(self) -> pd.DataFrame:
         """Charge le CSV brut depuis le disque."""

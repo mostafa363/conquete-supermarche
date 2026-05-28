@@ -48,5 +48,6 @@ FEATURE_COLUMNS = [
 
 RAW_CSV_PATH     = DATA_DIR / "open_food_facts_raw.csv"
 CLEANED_CSV_PATH = DATA_DIR / "open_food_facts_clean.csv"
+OFF_DUMP_CSV_PATH = DATA_DIR / "en.openfoodfacts.org.products.csv"
 MODEL_PATH       = MODEL_DIR / "nutriscore_model.joblib"
 METRICS_PATH     = MODEL_DIR / "metrics.json"
