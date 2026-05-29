@@ -706,6 +706,8 @@ if page == "💬 Assistant IA (NutriBot)":
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
+    demo_mode = not api_key or len(api_key) < 10
+
     # ── Style chat ────────────────────────────────────────────────────────
     st.markdown("""
     <style>
@@ -725,14 +727,12 @@ if page == "💬 Assistant IA (NutriBot)":
     .nb-intro-text { color:#c8e6dc; }
     .nb-intro-text strong { color:#fff; font-size:1rem; }
     .nb-intro-text p { font-size:.85rem; margin:.3rem 0 0; opacity:.8; }
-    .nb-suggestions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1rem; }
-    .nb-chip {
-        background:rgba(29,122,94,.1); border:1.5px solid rgba(29,122,94,.25);
-        border-radius:100px; padding:6px 14px; font-size:.8rem; font-weight:600;
-        color:#1D7A5E; cursor:pointer; transition:all .2s;
-        white-space:nowrap;
+    .nb-demo-banner {
+        background:linear-gradient(90deg,#2d1f00,#3d2900);
+        border:1px solid rgba(251,191,36,.3); border-radius:12px;
+        padding:.7rem 1.2rem; margin-bottom:1rem;
+        color:#fbbf24; font-size:.85rem; display:flex; align-items:center; gap:.5rem;
     }
-    .nb-chip:hover { background:rgba(29,122,94,.2); border-color:#1D7A5E; }
     </style>
 
     <div class="nb-intro">
@@ -744,6 +744,15 @@ if page == "💬 Assistant IA (NutriBot)":
       </div>
     </div>
     """, unsafe_allow_html=True)
+
+    if demo_mode:
+        st.markdown("""
+        <div class="nb-demo-banner">
+            ⚡ <strong>Mode démo actif</strong> — Réponses basées sur la base DuckDB sans IA générative.
+            Entrez une clé Gemini gratuite (<a href="https://aistudio.google.com/apikey" target="_blank"
+            style="color:#fbbf24">aistudio.google.com</a>) pour activer l'IA complète.
+        </div>
+        """, unsafe_allow_html=True)
 
     # ── Questions suggérées ───────────────────────────────────────────────
     suggestions = [
@@ -774,28 +783,25 @@ if page == "💬 Assistant IA (NutriBot)":
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
 
-        if not api_key or len(api_key) < 10:
-            with st.chat_message("assistant", avatar="🥦"):
-                st.warning("🔑 Entrez votre clé API Gemini dans la sidebar pour activer NutriBot. Clé gratuite sur aistudio.google.com")
-        else:
-            with st.chat_message("assistant", avatar="🥦"):
-                with st.spinner("NutriBot réfléchit..."):
-                    try:
+        with st.chat_message("assistant", avatar="🥦"):
+            with st.spinner("NutriBot réfléchit..."):
+                try:
+                    if demo_mode:
+                        from src.chatbot import chat_demo
+                        reply = chat_demo(st.session_state.chat_history)
+                    else:
                         from src.chatbot import chat as nutribot_chat
-                        reply = nutribot_chat(
-                            st.session_state.chat_history,
-                            api_key,
-                        )
-                        st.markdown(reply)
-                        st.session_state.chat_history.append(
-                            {"role": "assistant", "content": reply}
-                        )
-                    except Exception as e:
-                        err = str(e)
-                        if "api_key" in err.lower() or "401" in err or "403" in err or "invalid" in err.lower():
-                            st.error("Clé API invalide. Vérifiez votre clé Gemini sur aistudio.google.com")
-                        else:
-                            st.error(f"Erreur : {err}")
+                        reply = nutribot_chat(st.session_state.chat_history, api_key)
+                    st.markdown(reply)
+                    st.session_state.chat_history.append(
+                        {"role": "assistant", "content": reply}
+                    )
+                except Exception as e:
+                    err = str(e)
+                    if "api_key" in err.lower() or "401" in err or "403" in err or "invalid" in err.lower():
+                        st.error("Clé API invalide. Vérifiez votre clé Gemini sur aistudio.google.com")
+                    else:
+                        st.error(f"Erreur : {err}")
 
     # ── Bouton reset ──────────────────────────────────────────────────────
     if st.session_state.chat_history:
