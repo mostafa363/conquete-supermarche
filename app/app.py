@@ -1198,6 +1198,87 @@ elif page == "🔄 Substitution produits":
         st.warning("⚠️ Aucune donnée. Lance d'abord `python main.py`")
         st.stop()
 
+    st.markdown("""
+    <style>
+    /* ── Produit source ── */
+    .src-card {
+        background: linear-gradient(135deg,#fff8f5 0%,#fff 100%);
+        border: 1.5px solid #fed7aa; border-radius: 20px;
+        padding: 1.4rem 1.8rem; display: flex; align-items: center; gap: 1.5rem;
+        margin: 1rem 0 .5rem; box-shadow: 0 6px 24px rgba(239,68,68,.08);
+        animation: fadeInUp .4s ease;
+    }
+    .src-img {
+        width: 90px; height: 90px; object-fit: cover;
+        border-radius: 14px; flex-shrink: 0;
+        border: 1px solid #f0f0f0;
+    }
+    .src-img-ph {
+        width: 90px; height: 90px; border-radius: 14px; flex-shrink: 0;
+        background: linear-gradient(135deg,#fff7ed,#fef3c7);
+        display: flex; align-items: center; justify-content: center; font-size: 2.2rem;
+    }
+    .src-info { flex: 1; min-width: 0; }
+    .src-eyebrow { font-size: .65rem; font-weight: 800; letter-spacing: 1.8px;
+                   text-transform: uppercase; color: #f97316; margin-bottom: .3rem; }
+    .src-name { font-size: 1.05rem; font-weight: 800; color: #1a2e28;
+                line-height: 1.3; margin-bottom: .4rem;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .src-brand { font-size: .78rem; color: #94a3b8; margin-bottom: .6rem; }
+    .src-nutrients { display: flex; gap: 10px; flex-wrap: wrap; }
+    .src-nut {
+        background: rgba(249,115,22,.08); border: 1px solid rgba(249,115,22,.18);
+        border-radius: 8px; padding: 4px 10px;
+        font-size: .75rem; font-weight: 700; color: #c2410c;
+    }
+
+    /* ── Flèche transition ── */
+    .sub-arrow {
+        text-align: center; padding: .8rem 0;
+        font-size: .72rem; font-weight: 800; letter-spacing: 2px;
+        text-transform: uppercase; color: #1D7A5E;
+        display: flex; align-items: center; justify-content: center; gap: 12px;
+    }
+    .sub-arrow::before,.sub-arrow::after {
+        content:''; flex:1; height:1px;
+        background: linear-gradient(90deg,transparent,rgba(29,122,94,.3),transparent);
+    }
+
+    /* ── Substitute card ── */
+    .sub-card {
+        background: #fff; border-radius: 20px;
+        border: 1.5px solid #e8f5f0;
+        box-shadow: 0 4px 20px rgba(0,0,0,.06);
+        overflow: hidden; transition: all .3s cubic-bezier(.4,0,.2,1);
+        animation: fadeInUp .5s ease both;
+        display: flex; flex-direction: column;
+    }
+    .sub-card:hover { transform: translateY(-6px); box-shadow: 0 20px 48px rgba(29,122,94,.14); border-color: #a7f3d0; }
+    .sub-card-img { width:100%; height:150px; object-fit:cover; }
+    .sub-card-img-ph {
+        width:100%; height:150px;
+        background: linear-gradient(135deg,#f0fdf4,#dcfce7);
+        display:flex; align-items:center; justify-content:center; font-size:3rem;
+    }
+    .sub-card-body { padding: 14px 16px; flex:1; display:flex; flex-direction:column; gap:6px; }
+    .sub-card-name { font-weight:800; font-size:.9rem; color:#1a2e28; line-height:1.3; }
+    .sub-card-brand { font-size:.75rem; color:#94a3b8; font-weight:500; }
+    .sub-card-nutrients { display:flex; gap:6px; flex-wrap:wrap; margin-top:2px; }
+    .sub-nut {
+        background: rgba(29,122,94,.08); border:1px solid rgba(29,122,94,.15);
+        border-radius:6px; padding:3px 8px;
+        font-size:.72rem; font-weight:700; color:#1D7A5E;
+    }
+    .sub-delta {
+        font-size:.7rem; font-weight:700; padding:2px 7px;
+        border-radius:6px; display:inline-flex; align-items:center; gap:3px;
+    }
+    .sub-delta.good { background:rgba(16,185,129,.1); color:#059669; }
+    .sub-delta.bad  { background:rgba(239,68,68,.08); color:#dc2626; }
+    .sub-card-footer { padding:10px 16px 14px; margin-top:auto; }
+    </style>
+    """, unsafe_allow_html=True)
+
     search_term = st.text_input("🔎 Rechercher un produit à remplacer", placeholder="Ex: chips, soda, biscuit...")
 
     candidates = df.copy()
@@ -1205,7 +1286,6 @@ elif page == "🔄 Substitution produits":
         candidates = candidates[
             candidates["product_name"].str.lower().str.contains(search_term.lower(), na=False)
         ]
-
     candidates = candidates[candidates["nutriscore_grade"].isin(["c","d","e"])]
 
     if candidates.empty:
@@ -1215,62 +1295,119 @@ elif page == "🔄 Substitution produits":
         selected_name = st.selectbox("Sélectionner le produit", product_names[:50])
         row = candidates[candidates["product_name"] == selected_name].iloc[0]
 
-        g = str(row.get("nutriscore_grade", "?")).lower()
-        st.markdown("---")
-        st.markdown(f"**Produit sélectionné :** {row['product_name']}")
-        st.markdown(grade_badge(g), unsafe_allow_html=True)
+        g     = str(row.get("nutriscore_grade", "?")).lower()
+        color = COLORS.get(g, "#888")
+        icons = {"a":"🌿","b":"✅","c":"⚠️","d":"🔶","e":"❌"}
+        img   = row.get("image_url","")
+        img_valid = img and str(img) not in ("nan","None","")
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("⚡ Énergie", f"{row.get('energy_100g',0):.0f} kcal")
-        col2.metric("🍬 Sucres", f"{row.get('sugars_100g',0):.1f}g")
-        col3.metric("🧂 Sel", f"{row.get('salt_100g',0):.2f}g")
+        img_html = (f"<img class='src-img' src='{img}' "
+                    f"onerror=\"this.outerHTML='<div class=\\'src-img-ph\\'>🛒</div>'\"/>"
+                    if img_valid else "<div class='src-img-ph'>🛒</div>")
 
-        st.markdown("---")
-        st.subheader("✅ Alternatives plus saines")
+        e  = float(row.get('energy_100g',0) or 0)
+        su = float(row.get('sugars_100g',0) or 0)
+        sa = float(row.get('salt_100g',0) or 0)
+        ad = int(row.get('additives_n',0) or 0)
+
+        st.markdown(f"""
+        <div class="src-card">
+          {img_html}
+          <div class="src-info">
+            <div class="src-eyebrow">Produit sélectionné</div>
+            <div class="src-name">{str(row['product_name'])[:60]}</div>
+            <div class="src-brand">🏷️ {str(row.get('brands','Inconnu'))[:35]}</div>
+            <div style="margin-bottom:.5rem">
+              <span class="ns-badge" style="background:{color}">{icons.get(g,'')} Nutri-Score {g.upper()}</span>
+            </div>
+            <div class="src-nutrients">
+              <span class="src-nut">⚡ {e:.0f} kcal</span>
+              <span class="src-nut">🍬 {su:.1f}g sucres</span>
+              <span class="src-nut">🧂 {sa:.2f}g sel</span>
+              {'<span class="src-nut">⚗️ '+str(ad)+' additifs</span>' if ad > 0 else ''}
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
         subs = _repo.find_substitutes(row, n=3)
 
         if subs.empty:
             st.warning("Aucune alternative trouvée dans la même catégorie. Essayez un autre produit.")
         else:
+            st.markdown(f"""
+            <div class="sub-arrow">
+              ✅ {len(subs)} alternative{'s' if len(subs)>1 else ''} plus saine{'s' if len(subs)>1 else ''} trouvée{'s' if len(subs)>1 else ''}
+            </div>
+            """, unsafe_allow_html=True)
+
             sub_cols = st.columns(len(subs))
             for i, (_, sub_row) in enumerate(subs.iterrows()):
-                sg = str(sub_row.get("nutriscore_grade","?")).lower()
-                img = sub_row.get("image_url","")
-                with sub_cols[i]:
-                    with st.container(border=True):
-                        if img and str(img) != "nan":
-                            st.image(str(img), use_container_width=True)
-                        else:
-                            st.markdown(
-                                "<div style='height:100px;background:#e8f5e9;border-radius:8px;"
-                                "display:flex;align-items:center;justify-content:center;"
-                                "font-size:2rem'>✅</div>",
-                                unsafe_allow_html=True,
-                            )
-                        st.markdown(f"**{str(sub_row['product_name'])[:40]}**")
-                        st.caption(f"🏷️ {sub_row.get('brands','')}")
-                        st.markdown(grade_badge(sg), unsafe_allow_html=True)
-                        col1, col2 = st.columns(2)
-                        col1.metric("⚡", f"{sub_row.get('energy_100g',0):.0f}")
-                        col2.metric("🍬", f"{sub_row.get('sugars_100g',0):.1f}g")
+                sg    = str(sub_row.get("nutriscore_grade","?")).lower()
+                scolor= COLORS.get(sg, "#888")
+                simg  = sub_row.get("image_url","")
+                simg_v= simg and str(simg) not in ("nan","None","")
 
-                        if st.session_state.user:
-                            btn_key = f"save_{i}_{sub_row.get('code','')}"
-                            if st.button("💾 Sauvegarder", key=btn_key, use_container_width=True):
-                                saved = save_substitute(
-                                    user_id        = st.session_state.user["user_id"],
-                                    product_code   = str(row.get("code", "")),
-                                    product_name   = str(row.get("product_name", "")),
-                                    substitute_code= str(sub_row.get("code", "")),
-                                    substitute_name= str(sub_row.get("product_name", "")),
-                                )
-                                if saved:
-                                    st.success("Substitut sauvegardé !")
-                                else:
-                                    st.info("Déjà sauvegardé.")
-                        else:
-                            st.caption("🔒 Connectez-vous pour sauvegarder")
+                simg_html = (f"<img class='sub-card-img' src='{simg}' "
+                             f"onerror=\"this.outerHTML='<div class=\\'sub-card-img-ph\\'>✅</div>'\"/>"
+                             if simg_v else "<div class='sub-card-img-ph'>✅</div>")
+
+                se  = float(sub_row.get('energy_100g',0) or 0)
+                ssu = float(sub_row.get('sugars_100g',0) or 0)
+                ssa = float(sub_row.get('salt_100g',0) or 0)
+
+                # deltas
+                def delta_html(label, orig, new, unit, lower_is_better=True):
+                    if orig == 0:
+                        return ""
+                    diff = new - orig
+                    pct  = abs(diff / orig * 100)
+                    if pct < 2:
+                        return ""
+                    better = (diff < 0) == lower_is_better
+                    cls    = "good" if better else "bad"
+                    arrow  = "↓" if diff < 0 else "↑"
+                    return f"<span class='sub-delta {cls}'>{arrow} {pct:.0f}% {label}</span>"
+
+                deltas = "".join(filter(None, [
+                    delta_html("énergie", e, se, "kcal"),
+                    delta_html("sucres",  su, ssu, "g"),
+                    delta_html("sel",     sa, ssa, "g"),
+                ]))
+
+                with sub_cols[i]:
+                    st.markdown(f"""
+                    <div class="sub-card">
+                      {simg_html}
+                      <div class="sub-card-body">
+                        <div class="sub-card-name">{str(sub_row['product_name'])[:50]}</div>
+                        <div class="sub-card-brand">🏷️ {str(sub_row.get('brands',''))[:30]}</div>
+                        <div>
+                          <span class="ns-badge" style="background:{scolor}">{icons.get(sg,'')} {sg.upper()}</span>
+                        </div>
+                        <div class="sub-card-nutrients">
+                          <span class="sub-nut">⚡ {se:.0f} kcal</span>
+                          <span class="sub-nut">🍬 {ssu:.1f}g</span>
+                          <span class="sub-nut">🧂 {ssa:.2f}g</span>
+                        </div>
+                        <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:4px">{deltas}</div>
+                      </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if st.session_state.user:
+                        btn_key = f"save_{i}_{sub_row.get('code','')}"
+                        if st.button("💾 Sauvegarder", key=btn_key, use_container_width=True):
+                            saved = save_substitute(
+                                user_id        = st.session_state.user["user_id"],
+                                product_code   = str(row.get("code", "")),
+                                product_name   = str(row.get("product_name", "")),
+                                substitute_code= str(sub_row.get("code", "")),
+                                substitute_name= str(sub_row.get("product_name", "")),
+                            )
+                            st.success("Sauvegardé !") if saved else st.info("Déjà sauvegardé.")
+                    else:
+                        st.markdown("<div style='text-align:center;font-size:.78rem;color:#94a3b8;padding:6px 0'>🔒 Connectez-vous pour sauvegarder</div>", unsafe_allow_html=True)
 
 # ── PAGE 7 : Comparaison ─────────────────────────────────────────────────
 elif page == "⚖️ Comparaison produits":
