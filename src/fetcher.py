@@ -14,8 +14,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config import RAW_CSV_PATH, USEFUL_COLUMNS, OFF_DUMP_CSV_PATH
 
 _USER_AGENT = "SoGood/1.0 (educational project; mostafabouchamma@gmail.com)"
-_SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
-_PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product/{code}.json"
+_SEARCH_URL  = "https://world.openfoodfacts.org/cgi/search.pl"
+_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product/{code}.json"
 
 
 class OpenFoodFactsFetcher:
@@ -55,16 +55,20 @@ class OpenFoodFactsFetcher:
         return pd.DataFrame(all_products)
 
     def fetch_by_barcode(self, code: str) -> dict:
-        """Retourne les données brutes d'un produit via son code EAN."""
-        url = _PRODUCT_URL.format(code=code.strip())
+        """Retourne les données brutes d'un produit via son code EAN (API v0)."""
+        code = code.strip()
+        url  = _PRODUCT_URL.format(code=code)
         try:
-            resp = self._session.get(url, timeout=10)
+            resp = self._session.get(url, timeout=15)
             resp.raise_for_status()
             data = resp.json()
-            if data.get("status") == 1:
+            # v0 : status == 1 quand trouvé
+            if data.get("status") == 1 and data.get("product"):
                 return data["product"]
+            print(f"[Fetcher] Barcode {code} : status={data.get('status')} — {data.get('status_verbose','')}")
         except requests.RequestException as e:
             print(f"[Fetcher][WARN] Barcode {code} : {e}")
+            raise
         return {}
 
     # ── Persistance brute ────────────────────────────────────────────────

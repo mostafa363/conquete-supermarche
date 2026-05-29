@@ -622,6 +622,7 @@ with st.sidebar:
         "🔄 Substitution produits",
         "⚖️ Comparaison produits",
         "🗄️ Explorateur DuckDB",
+        "🏗️ Architecture Big Data",
         "👤 Connexion / Inscription",
     ]
     if st.session_state.user:
@@ -807,10 +808,13 @@ elif page == "🔍 Recherche produits":
                         st.markdown(f"**Ingrédients :** {str(row['ingredients_text'])[:300]}...")
             else:
                 # 2) OpenFoodFactsFetcher — appel API si absent en base
-                with st.spinner("Recherche sur Open Food Facts..."):
-                    p = _fetcher.fetch_by_barcode(barcode.strip())
+                try:
+                    with st.spinner("Recherche sur Open Food Facts..."):
+                        p = _fetcher.fetch_by_barcode(barcode.strip())
                     if p:
                         g = p.get("nutriscore_grade", "?").lower()
+                        if g not in COLORS:
+                            g = "?"
                         st.success("Produit trouvé sur Open Food Facts !")
                         c1, c2 = st.columns([1, 2])
                         with c1:
@@ -819,20 +823,27 @@ elif page == "🔍 Recherche produits":
                                 st.image(img, use_container_width=True)
                         with c2:
                             st.markdown(f"### {p.get('product_name', 'Produit inconnu')}")
-                            st.markdown(grade_badge(g), unsafe_allow_html=True)
+                            if g in COLORS:
+                                st.markdown(grade_badge(g), unsafe_allow_html=True)
                             st.markdown(f"**Marque :** {p.get('brands','N/A')}")
                             st.markdown(f"**Catégorie :** {p.get('categories','N/A')}")
                             nutriments = p.get("nutriments", {})
                             col1, col2 = st.columns(2)
-                            col1.metric("⚡ Énergie", f"{nutriments.get('energy-kcal_100g',0):.0f} kcal")
-                            col1.metric("🍬 Sucres", f"{nutriments.get('sugars_100g',0):.1f}g")
-                            col2.metric("🧂 Sel", f"{nutriments.get('salt_100g',0):.2f}g")
-                            col2.metric("💪 Protéines", f"{nutriments.get('proteins_100g',0):.1f}g")
+                            energy = nutriments.get("energy-kcal_100g") or nutriments.get("energy_100g", 0)
+                            col1.metric("⚡ Énergie",   f"{float(energy or 0):.0f} kcal")
+                            col1.metric("🍬 Sucres",    f"{float(nutriments.get('sugars_100g', 0) or 0):.1f}g")
+                            col2.metric("🧂 Sel",       f"{float(nutriments.get('salt_100g', 0) or 0):.2f}g")
+                            col2.metric("💪 Protéines", f"{float(nutriments.get('proteins_100g', 0) or 0):.1f}g")
                             ingr = p.get("ingredients_text", "")
                             if ingr:
                                 st.markdown(f"**Ingrédients :** {ingr[:300]}...")
                     else:
-                        st.warning("Produit non trouvé sur Open Food Facts.")
+                        st.warning(
+                            f"Produit `{barcode.strip()}` introuvable sur Open Food Facts.  \n"
+                            "Vérifie que le code EAN est correct (13 chiffres sans espace)."
+                        )
+                except Exception as e:
+                    st.error(f"Erreur de connexion à l'API Open Food Facts : {e}")
 
 # ── PAGE 3 : Analyses ────────────────────────────────────────────────────
 elif page == "📊 Analyses détaillées":
@@ -843,7 +854,7 @@ elif page == "📊 Analyses détaillées":
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4 = st.tabs(["📊 Distributions", "🔗 Corrélations", "🍬 Sucres & Sel", "🏆 Feature Importance"])
+    t1, t2, t3, t4, t5 = st.tabs(["📊 Distributions", "🔗 Corrélations", "🍬 Sucres & Sel", "🏆 Feature Importance", "🎯 Évaluation modèles"])
 
     with t1:
         c1, c2 = st.columns(2)
@@ -884,6 +895,73 @@ elif page == "📊 Analyses détaillées":
                 st.info(f"**NLP (Hugging Face)** — Accuracy : {m2['accuracy']*100:.1f}% | F1 : {m2['f1_score']:.4f} | Modèle : `{m2['hf_model']}`")
         else:
             st.warning("Modèle non chargé. Lance d'abord `python main.py`")
+
+    with t5:
+        st.subheader("🎯 Matrice de confusion — XGBoost")
+        if model is not None and not df.empty:
+            import plotly.figure_factory as ff
+            from sklearn.model_selection import train_test_split
+            from sklearn.metrics import confusion_matrix, classification_report
+
+            feat_cols = [c for c in FEATURE_COLUMNS if c in df.columns]
+            df_eval = df.dropna(subset=feat_cols + ["nutriscore_grade"])
+            X = df_eval[feat_cols]
+            y = df_eval["nutriscore_grade"]
+            _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+            y_pred = model.predict(X_test)
+
+            labels_order = ["a","b","c","d","e"]
+            cm = confusion_matrix(y_test, y_pred, labels=labels_order)
+            cm_pct = cm.astype(float) / cm.sum(axis=1, keepdims=True) * 100
+
+            fig_cm = ff.create_annotated_heatmap(
+                z=cm_pct.tolist(),
+                x=[g.upper() for g in labels_order],
+                y=[g.upper() for g in labels_order],
+                annotation_text=[[f"{v:.0f}%" for v in row] for row in cm_pct],
+                colorscale="Greens", showscale=True,
+            )
+            fig_cm.update_layout(
+                title="Matrice de confusion XGBoost (% par classe réelle)",
+                xaxis_title="Prédit", yaxis_title="Réel",
+                xaxis=dict(side="bottom"), height=420,
+            )
+            st.plotly_chart(fig_cm, use_container_width=True)
+
+            report = classification_report(y_test, y_pred, target_names=[g.upper() for g in labels_order], output_dict=True)
+            report_df = pd.DataFrame(report).T.drop(columns=["support"], errors="ignore")
+            st.dataframe(report_df.style.format("{:.2f}").background_gradient(cmap="Greens", axis=None), use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("🧠 Matrice de confusion — NLP (Hugging Face)")
+            embedder, nlp_clf = get_nlp_model()
+            if nlp_clf is not None:
+                df_nlp = df.dropna(subset=["product_name","nutriscore_grade"])
+                df_nlp = df_nlp.sample(min(3000, len(df_nlp)), random_state=42)
+                texts = (df_nlp["product_name"].fillna("") + " " + df_nlp.get("ingredients_text", pd.Series([""] * len(df_nlp))).fillna("")).tolist()
+                _, X_t, _, y_t = train_test_split(texts, df_nlp["nutriscore_grade"].tolist(), test_size=0.2, random_state=42)
+                with st.spinner("Encodage NLP en cours..."):
+                    X_emb = embedder.encode(X_t, show_progress_bar=False)
+                y_p = nlp_clf.predict(X_emb)
+                cm2 = confusion_matrix(y_t, y_p, labels=labels_order)
+                cm2_pct = cm2.astype(float) / (cm2.sum(axis=1, keepdims=True) + 1e-9) * 100
+                fig_cm2 = ff.create_annotated_heatmap(
+                    z=cm2_pct.tolist(),
+                    x=[g.upper() for g in labels_order],
+                    y=[g.upper() for g in labels_order],
+                    annotation_text=[[f"{v:.0f}%" for v in row] for row in cm2_pct],
+                    colorscale="Blues", showscale=True,
+                )
+                fig_cm2.update_layout(
+                    title="Matrice de confusion NLP (% par classe réelle)",
+                    xaxis_title="Prédit", yaxis_title="Réel",
+                    xaxis=dict(side="bottom"), height=420,
+                )
+                st.plotly_chart(fig_cm2, use_container_width=True)
+            else:
+                st.warning("Modèle NLP non disponible.")
+        else:
+            st.warning("Données ou modèle non disponibles.")
 
 # ── PAGE 4 : Prédiction XGBoost ──────────────────────────────────────────
 elif page == "🤖 Prédiction IA":
@@ -1317,3 +1395,236 @@ elif page == "🗄️ Explorateur DuckDB":
 
             csv = result.to_csv(index=False).encode("utf-8")
             st.download_button("⬇️ Télécharger CSV", csv, "query_result.csv", "text/csv")
+
+# ── PAGE 11 : Architecture Big Data ──────────────────────────────────────
+elif page == "🏗️ Architecture Big Data":
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>🏗️ Architecture Big Data</h2>
+        <p>Pipeline complet : ingestion Kafka → stockage DuckDB → traitement Spark → modèles ML/NLP → Streamlit.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Diagramme architecture ────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    .arch-wrap { display:flex; flex-direction:column; gap:0; align-items:center; margin: 1.5rem 0; }
+    .arch-row  { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; }
+    .arch-box  {
+        background:#fff; border-radius:16px; padding:16px 20px; min-width:140px; max-width:180px;
+        border:1.5px solid #e8f5f0; box-shadow:0 4px 18px rgba(0,0,0,.06);
+        text-align:center; transition:transform .2s;
+        animation: fadeInUp .5s ease both;
+    }
+    .arch-box:hover { transform:translateY(-4px); box-shadow:0 12px 30px rgba(29,122,94,.12); }
+    .arch-box .ab-icon { font-size:2rem; margin-bottom:6px; }
+    .arch-box .ab-title { font-weight:700; font-size:.88rem; color:#1a2e28; }
+    .arch-box .ab-sub   { font-size:.72rem; color:#94a3b8; margin-top:2px; }
+    .arch-box.green  { border-color:#a7f3d0; background:linear-gradient(135deg,#f0fdf9,#fff); }
+    .arch-box.blue   { border-color:#bfdbfe; background:linear-gradient(135deg,#eff6ff,#fff); }
+    .arch-box.purple { border-color:#ddd6fe; background:linear-gradient(135deg,#f5f3ff,#fff); }
+    .arch-box.orange { border-color:#fed7aa; background:linear-gradient(135deg,#fff7ed,#fff); }
+    .arch-box.teal   { border-color:#99f6e4; background:linear-gradient(135deg,#f0fdfa,#fff); }
+    .arch-arrow { font-size:1.6rem; color:#94a3b8; flex-shrink:0; }
+    .arch-down  { font-size:1.6rem; color:#94a3b8; margin:4px 0; }
+    .arch-label { font-size:.68rem; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
+                  color:#1D7A5E; background:rgba(29,122,94,.08); padding:3px 12px;
+                  border-radius:100px; margin:6px 0; }
+    </style>
+
+    <div class="arch-wrap">
+        <!-- SOURCE -->
+        <div class="arch-label">SOURCE DE DONNÉES</div>
+        <div class="arch-row">
+            <div class="arch-box orange">
+                <div class="ab-icon">📦</div>
+                <div class="ab-title">OpenFoodFacts</div>
+                <div class="ab-sub">Dump TSV 2.3 GB<br>~3M produits</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-box orange">
+                <div class="ab-icon">🌐</div>
+                <div class="ab-title">API OFF</div>
+                <div class="ab-sub">REST JSON<br>Recherche EAN</div>
+            </div>
+        </div>
+
+        <div class="arch-down">↓</div>
+
+        <!-- INGESTION -->
+        <div class="arch-label">COUCHE STREAMING — KAFKA</div>
+        <div class="arch-row">
+            <div class="arch-box blue">
+                <div class="ab-icon">📤</div>
+                <div class="ab-title">Kafka Producer</div>
+                <div class="ab-sub">kafka_producer.py<br>Topic: off-products</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-box blue">
+                <div class="ab-icon">🔀</div>
+                <div class="ab-title">Apache Kafka</div>
+                <div class="ab-sub">KRaft mode<br>Docker · port 9092</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-box blue">
+                <div class="ab-icon">📥</div>
+                <div class="ab-title">Kafka Consumer</div>
+                <div class="ab-sub">kafka_consumer.py<br>Batch 500 msgs</div>
+            </div>
+        </div>
+
+        <div class="arch-down">↓</div>
+
+        <!-- TRAITEMENT -->
+        <div class="arch-label">COUCHE TRAITEMENT — SPARK</div>
+        <div class="arch-row">
+            <div class="arch-box purple">
+                <div class="ab-icon">⚡</div>
+                <div class="ab-title">Spark Master</div>
+                <div class="ab-sub">Docker · port 8081<br>spark-master:7077</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-box purple">
+                <div class="ab-icon">🔧</div>
+                <div class="ab-title">PySpark Pipeline</div>
+                <div class="ab-sub">spark_pipeline.py<br>300k lignes → Parquet</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-box purple">
+                <div class="ab-icon">🗂️</div>
+                <div class="ab-title">Parquet Output</div>
+                <div class="ab-sub">sogood_spark.parquet<br>Columnar format</div>
+            </div>
+        </div>
+
+        <div class="arch-down">↓</div>
+
+        <!-- STOCKAGE -->
+        <div class="arch-label">COUCHE STOCKAGE</div>
+        <div class="arch-row">
+            <div class="arch-box teal">
+                <div class="ab-icon">🦆</div>
+                <div class="ab-title">DuckDB</div>
+                <div class="ab-sub">sogood.duckdb<br>Products + Users</div>
+            </div>
+        </div>
+
+        <div class="arch-down">↓</div>
+
+        <!-- ML -->
+        <div class="arch-label">COUCHE MACHINE LEARNING</div>
+        <div class="arch-row">
+            <div class="arch-box green">
+                <div class="ab-icon">🤖</div>
+                <div class="ab-title">XGBoost</div>
+                <div class="ab-sub">93.6% accuracy<br>9 features nutritionnelles</div>
+            </div>
+            <div class="arch-arrow">+</div>
+            <div class="arch-box green">
+                <div class="ab-icon">🧠</div>
+                <div class="ab-title">NLP Hugging Face</div>
+                <div class="ab-sub">MiniLM-L12-v2<br>384-dim embeddings</div>
+            </div>
+            <div class="arch-arrow">+</div>
+            <div class="arch-box green">
+                <div class="ab-icon">📈</div>
+                <div class="ab-title">MLflow</div>
+                <div class="ab-sub">Tracking expériences<br>Métriques & modèles</div>
+            </div>
+        </div>
+
+        <div class="arch-down">↓</div>
+
+        <!-- APP -->
+        <div class="arch-label">COUCHE PRÉSENTATION</div>
+        <div class="arch-row">
+            <div class="arch-box orange">
+                <div class="ab-icon">🥦</div>
+                <div class="ab-title">SoGood App</div>
+                <div class="ab-sub">Streamlit · port 8501<br>10 pages interactives</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── Stats live ────────────────────────────────────────────────────────
+    st.markdown('<div class="sect">📊 STATISTIQUES EN DIRECT</div>', unsafe_allow_html=True)
+
+    from src.auth import count_users
+    import json as _json
+
+    n_products  = _repo.count()
+    n_users     = count_users()
+    n_subs_row  = _repo.execute_sql("SELECT COUNT(*) as n FROM user_substitutes")
+    n_subs      = int(n_subs_row.iloc[0]["n"]) if not n_subs_row.empty and "n" in n_subs_row.columns else 0
+
+    parquet_path = Path(__file__).parent.parent / "data" / "sogood_spark.parquet"
+    parquet_info = f"{sum(1 for _ in parquet_path.glob('*.parquet'))} fichier(s)" if parquet_path.exists() else "Non généré"
+
+    xgb_acc, nlp_acc = "—", "—"
+    m_path = MODEL_DIR / "metrics.json"
+    if m_path.exists():
+        xgb_acc = f"{_json.load(open(m_path))['accuracy']*100:.1f}%"
+    nlp_path = MODEL_DIR / "nlp_metrics.json"
+    if nlp_path.exists():
+        nlp_acc = f"{_json.load(open(nlp_path))['accuracy']*100:.1f}%"
+
+    st.markdown(f"""
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="kpi-card">
+            <div class="kpi-icon">🦆</div>
+            <div class="kpi-value">{n_products:,}</div>
+            <div class="kpi-label">Produits DuckDB</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">👤</div>
+            <div class="kpi-value">{n_users}</div>
+            <div class="kpi-label">Utilisateurs inscrits</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">💾</div>
+            <div class="kpi-value">{n_subs}</div>
+            <div class="kpi-label">Substituts sauvegardés</div>
+        </div>
+    </div>
+    <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr)">
+        <div class="kpi-card">
+            <div class="kpi-icon">🤖</div>
+            <div class="kpi-value">{xgb_acc}</div>
+            <div class="kpi-label">Accuracy XGBoost</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">🧠</div>
+            <div class="kpi-value">{nlp_acc}</div>
+            <div class="kpi-label">Accuracy NLP</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-icon">🗂️</div>
+            <div class="kpi-value" style="font-size:1.1rem">{parquet_info}</div>
+            <div class="kpi-label">Spark Parquet</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Commandes de lancement ────────────────────────────────────────────
+    st.divider()
+    st.markdown('<div class="sect">🚀 COMMANDES DE LANCEMENT</div>', unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.markdown("**Kafka (Docker)**")
+        st.code("docker-compose up -d kafka", language="bash")
+        st.code("python src/kafka_producer.py", language="bash")
+        st.code("python src/kafka_consumer.py", language="bash")
+    with c2:
+        st.markdown("**Spark (Docker)**")
+        st.code("docker-compose up -d spark-master spark-worker", language="bash")
+        st.code("""docker exec sogood-spark-master \\
+  spark-submit \\
+  /opt/spark/work/src/spark_pipeline.py""", language="bash")
+    with c3:
+        st.markdown("**Pipeline ML**")
+        st.code("python main.py", language="bash")
+        st.markdown("**App Streamlit**")
+        st.code("streamlit run app/app.py", language="bash")
