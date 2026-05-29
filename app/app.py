@@ -687,7 +687,7 @@ if page == "💬 Assistant IA (NutriBot)":
     # ── Clé API ──────────────────────────────────────────────────────────
     api_key = ""
     try:
-        api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+        api_key = st.secrets.get("GEMINI_API_KEY", "")
     except Exception:
         pass
 
@@ -698,9 +698,9 @@ if page == "💬 Assistant IA (NutriBot)":
                 <span class="sb-section-icon">🔑</span>
                 <span>API NutriBot</span>
             </div>""", unsafe_allow_html=True)
-            api_key = st.text_input("Clé Anthropic", type="password",
-                                    placeholder="sk-ant-...",
-                                    help="Obtenez une clé sur console.anthropic.com")
+            api_key = st.text_input("Clé Gemini", type="password",
+                                    placeholder="AIza...",
+                                    help="Obtenez une clé GRATUITE sur aistudio.google.com")
 
     # ── Initialiser l'historique ──────────────────────────────────────────
     if "chat_history" not in st.session_state:
@@ -774,9 +774,9 @@ if page == "💬 Assistant IA (NutriBot)":
         with st.chat_message("user", avatar="👤"):
             st.markdown(user_input)
 
-        if not api_key or not api_key.startswith("sk-"):
+        if not api_key or len(api_key) < 10:
             with st.chat_message("assistant", avatar="🥦"):
-                st.warning("🔑 Entrez votre clé API Anthropic dans la sidebar pour activer NutriBot.")
+                st.warning("🔑 Entrez votre clé API Gemini dans la sidebar pour activer NutriBot. Clé gratuite sur aistudio.google.com")
         else:
             with st.chat_message("assistant", avatar="🥦"):
                 with st.spinner("NutriBot réfléchit..."):
@@ -792,8 +792,8 @@ if page == "💬 Assistant IA (NutriBot)":
                         )
                     except Exception as e:
                         err = str(e)
-                        if "authentication" in err.lower() or "401" in err:
-                            st.error("Clé API invalide. Vérifiez votre clé Anthropic.")
+                        if "api_key" in err.lower() or "401" in err or "403" in err or "invalid" in err.lower():
+                            st.error("Clé API invalide. Vérifiez votre clé Gemini sur aistudio.google.com")
                         else:
                             st.error(f"Erreur : {err}")
 

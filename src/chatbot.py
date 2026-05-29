@@ -1,11 +1,11 @@
 """
-Chatbot nutritionnel IA — powered by Claude API (Anthropic).
+Chatbot nutritionnel IA — powered by Google Gemini 1.5 Flash (gratuit).
 
 Fonctionnement :
   1. La question de l'utilisateur est analysée pour extraire des mots-clés.
   2. Ces mots-clés servent à requêter DuckDB et injecter des données réelles
-     dans le contexte envoyé à Claude.
-  3. Claude répond en français en s'appuyant sur ces données.
+     dans le contexte envoyé à Gemini.
+  3. Gemini répond en français en s'appuyant sur ces données.
 """
 
 import duckdb
@@ -61,7 +61,6 @@ def _fetch_context(user_message: str) -> str:
     try:
         con = duckdb.connect(_DB_PATH)
 
-        # Stats générales
         total = con.execute("SELECT COUNT(*) FROM products").fetchone()[0]
         dist  = con.execute(
             "SELECT nutriscore_grade, COUNT(*) as n FROM products "
@@ -69,7 +68,6 @@ def _fetch_context(user_message: str) -> str:
         ).fetchall()
         dist_txt = " | ".join(f"{g.upper()}:{n:,}" for g, n in dist if g)
 
-        # Recherche de produits mentionnés dans le message
         words = [w.strip("?.,!") for w in user_message.lower().split() if len(w) > 3]
         products_found = []
         for word in words[:4]:
@@ -119,28 +117,39 @@ def _fetch_context(user_message: str) -> str:
 
 def chat(messages: list, api_key: str) -> str:
     """
-    Envoie une conversation à Claude et retourne la réponse.
+    Envoie une conversation à Gemini 1.5 Flash et retourne la réponse.
 
     messages : liste de dict {"role": "user"|"assistant", "content": str}
-    api_key  : clé API Anthropic
+    api_key  : clé API Google AI Studio (aistudio.google.com) — gratuite
     """
-    import anthropic
+    from google import genai
+    from google.genai import types
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = genai.Client(api_key=api_key)
 
-    # Injecter le contexte DuckDB basé sur le dernier message utilisateur
     last_user_msg = next(
         (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
     )
     db_context = _fetch_context(last_user_msg)
-
     system_with_context = SYSTEM_PROMPT + f"\n\nCONTEXTE TEMPS RÉEL :\n{db_context}"
 
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=600,
-        system=system_with_context,
-        messages=messages,
+    # Convertir l'historique au format Gemini (role "model" au lieu de "assistant")
+    contents = []
+    for msg in messages:
+        role = "model" if msg["role"] == "assistant" else "user"
+        contents.append(types.Content(
+            role=role,
+            parts=[types.Part(text=msg["content"])]
+        ))
+
+    response = client.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_with_context,
+            max_output_tokens=600,
+            temperature=0.7,
+        ),
     )
 
-    return response.content[0].text
+    return response.text
