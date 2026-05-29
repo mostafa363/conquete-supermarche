@@ -1408,142 +1408,307 @@ elif page == "🏗️ Architecture Big Data":
     # ── Diagramme architecture ────────────────────────────────────────────
     st.markdown("""
     <style>
-    .arch-wrap { display:flex; flex-direction:column; gap:0; align-items:center; margin: 1.5rem 0; }
-    .arch-row  { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; }
-    .arch-box  {
-        background:#fff; border-radius:16px; padding:16px 20px; min-width:140px; max-width:180px;
-        border:1.5px solid #e8f5f0; box-shadow:0 4px 18px rgba(0,0,0,.06);
-        text-align:center; transition:transform .2s;
+    @keyframes flowDown {
+        0%  { opacity:.3; transform:translateY(-4px); }
+        100%{ opacity:1;  transform:translateY(4px); }
+    }
+    @keyframes glow {
+        0%,100%{ box-shadow: 0 0 0 0 currentColor; }
+        50%    { box-shadow: 0 0 18px 4px currentColor; }
+    }
+
+    .arch-panel {
+        background: linear-gradient(160deg,#0b1e19 0%,#0f2a22 50%,#091a14 100%);
+        border-radius: 24px;
+        padding: 2.5rem 2rem;
+        margin: 1.5rem 0;
+        border: 1px solid rgba(52,211,153,.15);
+        box-shadow: 0 30px 80px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+    }
+
+    /* Layer card */
+    .al {
+        display: flex;
+        align-items: stretch;
+        gap: 16px;
+        margin-bottom: 6px;
         animation: fadeInUp .5s ease both;
     }
-    .arch-box:hover { transform:translateY(-4px); box-shadow:0 12px 30px rgba(29,122,94,.12); }
-    .arch-box .ab-icon { font-size:2rem; margin-bottom:6px; }
-    .arch-box .ab-title { font-weight:700; font-size:.88rem; color:#1a2e28; }
-    .arch-box .ab-sub   { font-size:.72rem; color:#94a3b8; margin-top:2px; }
-    .arch-box.green  { border-color:#a7f3d0; background:linear-gradient(135deg,#f0fdf9,#fff); }
-    .arch-box.blue   { border-color:#bfdbfe; background:linear-gradient(135deg,#eff6ff,#fff); }
-    .arch-box.purple { border-color:#ddd6fe; background:linear-gradient(135deg,#f5f3ff,#fff); }
-    .arch-box.orange { border-color:#fed7aa; background:linear-gradient(135deg,#fff7ed,#fff); }
-    .arch-box.teal   { border-color:#99f6e4; background:linear-gradient(135deg,#f0fdfa,#fff); }
-    .arch-arrow { font-size:1.6rem; color:#94a3b8; flex-shrink:0; }
-    .arch-down  { font-size:1.6rem; color:#94a3b8; margin:4px 0; }
-    .arch-label { font-size:.68rem; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
-                  color:#1D7A5E; background:rgba(29,122,94,.08); padding:3px 12px;
-                  border-radius:100px; margin:6px 0; }
+    .al-badge {
+        writing-mode: vertical-rl;
+        text-orientation: mixed;
+        transform: rotate(180deg);
+        font-size: .6rem; font-weight: 800; letter-spacing: 2px;
+        text-transform: uppercase; padding: 12px 8px;
+        border-radius: 10px; min-width: 32px;
+        display: flex; align-items: center; justify-content: center;
+        flex-shrink: 0; white-space: nowrap;
+    }
+    .al-body {
+        flex:1; border-radius: 14px;
+        padding: 14px 18px;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        backdrop-filter: blur(4px);
+    }
+    .al-title {
+        font-size: .7rem; font-weight: 800; letter-spacing: 1.8px;
+        text-transform: uppercase; margin-bottom: 10px;
+        display: flex; align-items: center; gap: 6px;
+        flex-basis: 100%;
+    }
+
+    /* Component chip */
+    .ac {
+        display: flex; align-items: center; gap: 8px;
+        background: rgba(255,255,255,.07);
+        border: 1px solid rgba(255,255,255,.1);
+        border-radius: 12px; padding: 10px 14px;
+        transition: all .22s ease; cursor: default;
+        min-width: 140px;
+    }
+    .ac:hover {
+        background: rgba(255,255,255,.13);
+        border-color: rgba(255,255,255,.22);
+        transform: translateY(-3px);
+    }
+    .ac-icon { font-size: 1.5rem; flex-shrink:0; }
+    .ac-info {}
+    .ac-name { font-size: .82rem; font-weight: 700; color: #f0fdf9; line-height:1.2; }
+    .ac-desc { font-size: .68rem; color: rgba(200,230,220,.6); margin-top:2px; line-height:1.3; }
+
+    /* Arrow connector */
+    .ac-arr {
+        color: rgba(255,255,255,.25); font-size: 1.1rem;
+        display:flex; align-items:center; flex-shrink:0;
+    }
+
+    /* Flow arrow between layers */
+    .arch-flow {
+        display: flex; justify-content: center; align-items: center;
+        height: 28px; position: relative; margin: 0;
+    }
+    .arch-flow::before {
+        content: ''; position:absolute;
+        width: 2px; height: 100%;
+        background: linear-gradient(to bottom, transparent, rgba(52,211,153,.5), transparent);
+    }
+    .arch-flow-dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #34d399;
+        box-shadow: 0 0 10px rgba(52,211,153,.8);
+        animation: flowDown .9s ease-in-out infinite alternate;
+        position: relative; z-index:1;
+    }
+
+    /* Color variants */
+    .al-src  .al-badge { background:rgba(251,146,60,.18); color:#fb923c; }
+    .al-src  .al-body  { background:rgba(251,146,60,.06); border:1px solid rgba(251,146,60,.18); }
+    .al-src  .al-title { color:#fb923c; }
+
+    .al-kafka .al-badge { background:rgba(59,130,246,.18); color:#60a5fa; }
+    .al-kafka .al-body  { background:rgba(59,130,246,.06); border:1px solid rgba(59,130,246,.18); }
+    .al-kafka .al-title { color:#60a5fa; }
+
+    .al-spark .al-badge { background:rgba(167,139,250,.18); color:#a78bfa; }
+    .al-spark .al-body  { background:rgba(167,139,250,.06); border:1px solid rgba(167,139,250,.18); }
+    .al-spark .al-title { color:#a78bfa; }
+
+    .al-db .al-badge { background:rgba(45,212,191,.18); color:#2dd4bf; }
+    .al-db .al-body  { background:rgba(45,212,191,.06); border:1px solid rgba(45,212,191,.18); }
+    .al-db .al-title { color:#2dd4bf; }
+
+    .al-ml .al-badge { background:rgba(52,211,153,.18); color:#34d399; }
+    .al-ml .al-body  { background:rgba(52,211,153,.06); border:1px solid rgba(52,211,153,.18); }
+    .al-ml .al-title { color:#34d399; }
+
+    .al-app .al-badge { background:rgba(251,191,36,.18); color:#fbbf24; }
+    .al-app .al-body  { background:rgba(251,191,36,.06); border:1px solid rgba(251,191,36,.18); }
+    .al-app .al-title { color:#fbbf24; }
     </style>
 
-    <div class="arch-wrap">
-        <!-- SOURCE -->
-        <div class="arch-label">SOURCE DE DONNÉES</div>
-        <div class="arch-row">
-            <div class="arch-box orange">
-                <div class="ab-icon">📦</div>
-                <div class="ab-title">OpenFoodFacts</div>
-                <div class="ab-sub">Dump TSV 2.3 GB<br>~3M produits</div>
+    <div class="arch-panel">
+
+      <!-- SOURCE -->
+      <div class="al al-src">
+        <div class="al-badge">Source</div>
+        <div class="al-body">
+          <div class="al-title">📦 Source de données</div>
+          <div class="ac">
+            <div class="ac-icon">📦</div>
+            <div class="ac-info">
+              <div class="ac-name">OpenFoodFacts Dump</div>
+              <div class="ac-desc">TSV 2.3 GB · ~3M produits</div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-box orange">
-                <div class="ab-icon">🌐</div>
-                <div class="ab-title">API OFF</div>
-                <div class="ab-sub">REST JSON<br>Recherche EAN</div>
+          </div>
+          <div class="ac-arr">→</div>
+          <div class="ac">
+            <div class="ac-icon">🌐</div>
+            <div class="ac-info">
+              <div class="ac-name">API REST OFF</div>
+              <div class="ac-desc">Recherche EAN · JSON</div>
             </div>
+          </div>
         </div>
+      </div>
 
-        <div class="arch-down">↓</div>
+      <div class="arch-flow"><div class="arch-flow-dot"></div></div>
 
-        <!-- INGESTION -->
-        <div class="arch-label">COUCHE STREAMING — KAFKA</div>
-        <div class="arch-row">
-            <div class="arch-box blue">
-                <div class="ab-icon">📤</div>
-                <div class="ab-title">Kafka Producer</div>
-                <div class="ab-sub">kafka_producer.py<br>Topic: off-products</div>
+      <!-- KAFKA -->
+      <div class="al al-kafka">
+        <div class="al-badge">Streaming</div>
+        <div class="al-body">
+          <div class="al-title">🔀 Apache Kafka — KRaft mode · Docker port 9092</div>
+          <div class="ac">
+            <div class="ac-icon">📤</div>
+            <div class="ac-info">
+              <div class="ac-name">Kafka Producer</div>
+              <div class="ac-desc">kafka_producer.py</div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-box blue">
-                <div class="ab-icon">🔀</div>
-                <div class="ab-title">Apache Kafka</div>
-                <div class="ab-sub">KRaft mode<br>Docker · port 9092</div>
+          </div>
+          <div class="ac-arr">→</div>
+          <div class="ac">
+            <div class="ac-icon">🔀</div>
+            <div class="ac-info">
+              <div class="ac-name">Topic off-products</div>
+              <div class="ac-desc">Messages JSON</div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-box blue">
-                <div class="ab-icon">📥</div>
-                <div class="ab-title">Kafka Consumer</div>
-                <div class="ab-sub">kafka_consumer.py<br>Batch 500 msgs</div>
+          </div>
+          <div class="ac-arr">→</div>
+          <div class="ac">
+            <div class="ac-icon">📥</div>
+            <div class="ac-info">
+              <div class="ac-name">Kafka Consumer</div>
+              <div class="ac-desc">Batch 500 msgs/s</div>
             </div>
+          </div>
         </div>
+      </div>
 
-        <div class="arch-down">↓</div>
+      <div class="arch-flow"><div class="arch-flow-dot"></div></div>
 
-        <!-- TRAITEMENT -->
-        <div class="arch-label">COUCHE TRAITEMENT — SPARK</div>
-        <div class="arch-row">
-            <div class="arch-box purple">
-                <div class="ab-icon">⚡</div>
-                <div class="ab-title">Spark Master</div>
-                <div class="ab-sub">Docker · port 8081<br>spark-master:7077</div>
+      <!-- SPARK -->
+      <div class="al al-spark">
+        <div class="al-badge">Traitement</div>
+        <div class="al-body">
+          <div class="al-title">⚡ Apache Spark — Docker spark-master:7077</div>
+          <div class="ac">
+            <div class="ac-icon">⚡</div>
+            <div class="ac-info">
+              <div class="ac-name">Spark Master</div>
+              <div class="ac-desc">UI port 8081</div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-box purple">
-                <div class="ab-icon">🔧</div>
-                <div class="ab-title">PySpark Pipeline</div>
-                <div class="ab-sub">spark_pipeline.py<br>300k lignes → Parquet</div>
+          </div>
+          <div class="ac-arr">→</div>
+          <div class="ac">
+            <div class="ac-icon">🔧</div>
+            <div class="ac-info">
+              <div class="ac-name">PySpark Pipeline</div>
+              <div class="ac-desc">300k lignes · nettoyage · p99</div>
             </div>
-            <div class="arch-arrow">→</div>
-            <div class="arch-box purple">
-                <div class="ab-icon">🗂️</div>
-                <div class="ab-title">Parquet Output</div>
-                <div class="ab-sub">sogood_spark.parquet<br>Columnar format</div>
+          </div>
+          <div class="ac-arr">→</div>
+          <div class="ac">
+            <div class="ac-icon">🗂️</div>
+            <div class="ac-info">
+              <div class="ac-name">Parquet Output</div>
+              <div class="ac-desc">Columnar format</div>
             </div>
+          </div>
         </div>
+      </div>
 
-        <div class="arch-down">↓</div>
+      <div class="arch-flow"><div class="arch-flow-dot"></div></div>
 
-        <!-- STOCKAGE -->
-        <div class="arch-label">COUCHE STOCKAGE</div>
-        <div class="arch-row">
-            <div class="arch-box teal">
-                <div class="ab-icon">🦆</div>
-                <div class="ab-title">DuckDB</div>
-                <div class="ab-sub">sogood.duckdb<br>Products + Users</div>
+      <!-- DUCKDB -->
+      <div class="al al-db">
+        <div class="al-badge">Stockage</div>
+        <div class="al-body">
+          <div class="al-title">🦆 DuckDB — sogood.duckdb</div>
+          <div class="ac">
+            <div class="ac-icon">🛒</div>
+            <div class="ac-info">
+              <div class="ac-name">Table products</div>
+              <div class="ac-desc">52k produits nettoyés</div>
             </div>
+          </div>
+          <div class="ac-arr">+</div>
+          <div class="ac">
+            <div class="ac-icon">👤</div>
+            <div class="ac-info">
+              <div class="ac-name">Table users</div>
+              <div class="ac-desc">Auth SHA-256 + sel</div>
+            </div>
+          </div>
+          <div class="ac-arr">+</div>
+          <div class="ac">
+            <div class="ac-icon">💾</div>
+            <div class="ac-info">
+              <div class="ac-name">user_substitutes</div>
+              <div class="ac-desc">Favoris utilisateurs</div>
+            </div>
+          </div>
         </div>
+      </div>
 
-        <div class="arch-down">↓</div>
+      <div class="arch-flow"><div class="arch-flow-dot"></div></div>
 
-        <!-- ML -->
-        <div class="arch-label">COUCHE MACHINE LEARNING</div>
-        <div class="arch-row">
-            <div class="arch-box green">
-                <div class="ab-icon">🤖</div>
-                <div class="ab-title">XGBoost</div>
-                <div class="ab-sub">93.6% accuracy<br>9 features nutritionnelles</div>
+      <!-- ML -->
+      <div class="al al-ml">
+        <div class="al-badge">ML / IA</div>
+        <div class="al-body">
+          <div class="al-title">🤖 Machine Learning & NLP</div>
+          <div class="ac">
+            <div class="ac-icon">🤖</div>
+            <div class="ac-info">
+              <div class="ac-name">XGBoost</div>
+              <div class="ac-desc">93.6% acc · 9 features</div>
             </div>
-            <div class="arch-arrow">+</div>
-            <div class="arch-box green">
-                <div class="ab-icon">🧠</div>
-                <div class="ab-title">NLP Hugging Face</div>
-                <div class="ab-sub">MiniLM-L12-v2<br>384-dim embeddings</div>
+          </div>
+          <div class="ac-arr">+</div>
+          <div class="ac">
+            <div class="ac-icon">🧠</div>
+            <div class="ac-info">
+              <div class="ac-name">NLP Hugging Face</div>
+              <div class="ac-desc">MiniLM · 384-dim</div>
             </div>
-            <div class="arch-arrow">+</div>
-            <div class="arch-box green">
-                <div class="ab-icon">📈</div>
-                <div class="ab-title">MLflow</div>
-                <div class="ab-sub">Tracking expériences<br>Métriques & modèles</div>
+          </div>
+          <div class="ac-arr">+</div>
+          <div class="ac">
+            <div class="ac-icon">📈</div>
+            <div class="ac-info">
+              <div class="ac-name">MLflow</div>
+              <div class="ac-desc">Experiment tracking</div>
             </div>
+          </div>
         </div>
+      </div>
 
-        <div class="arch-down">↓</div>
+      <div class="arch-flow"><div class="arch-flow-dot"></div></div>
 
-        <!-- APP -->
-        <div class="arch-label">COUCHE PRÉSENTATION</div>
-        <div class="arch-row">
-            <div class="arch-box orange">
-                <div class="ab-icon">🥦</div>
-                <div class="ab-title">SoGood App</div>
-                <div class="ab-sub">Streamlit · port 8501<br>10 pages interactives</div>
-            </div>
+      <!-- APP -->
+      <div class="al al-app">
+        <div class="al-badge">App</div>
+        <div class="al-body">
+          <div class="al-title">🥦 SoGood — Streamlit · port 8501</div>
+          <div class="ac">
+            <div class="ac-icon">🏠</div>
+            <div class="ac-info"><div class="ac-name">Dashboard</div><div class="ac-desc">KPIs · Charts</div></div>
+          </div>
+          <div class="ac">
+            <div class="ac-icon">🔍</div>
+            <div class="ac-info"><div class="ac-name">Recherche</div><div class="ac-desc">Texte + EAN</div></div>
+          </div>
+          <div class="ac">
+            <div class="ac-icon">🤖</div>
+            <div class="ac-info"><div class="ac-name">Prédiction IA</div><div class="ac-desc">XGBoost + NLP</div></div>
+          </div>
+          <div class="ac">
+            <div class="ac-icon">🔄</div>
+            <div class="ac-info"><div class="ac-name">Substitution</div><div class="ac-desc">Alternatives saines</div></div>
+          </div>
         </div>
+      </div>
+
     </div>
     """, unsafe_allow_html=True)
 
@@ -1611,20 +1776,47 @@ elif page == "🏗️ Architecture Big Data":
     # ── Commandes de lancement ────────────────────────────────────────────
     st.divider()
     st.markdown('<div class="sect">🚀 COMMANDES DE LANCEMENT</div>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("**Kafka (Docker)**")
-        st.code("docker-compose up -d kafka", language="bash")
-        st.code("python src/kafka_producer.py", language="bash")
-        st.code("python src/kafka_consumer.py", language="bash")
-    with c2:
-        st.markdown("**Spark (Docker)**")
-        st.code("docker-compose up -d spark-master spark-worker", language="bash")
-        st.code("""docker exec sogood-spark-master \\
-  spark-submit \\
-  /opt/spark/work/src/spark_pipeline.py""", language="bash")
-    with c3:
-        st.markdown("**Pipeline ML**")
-        st.code("python main.py", language="bash")
-        st.markdown("**App Streamlit**")
-        st.code("streamlit run app/app.py", language="bash")
+
+    st.markdown("""
+    <style>
+    .cmd-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin:1rem 0 2rem; }
+    .cmd-card {
+        background: linear-gradient(160deg,#0b1e19,#0f2a22);
+        border-radius:16px; padding:18px 20px;
+        border:1px solid rgba(52,211,153,.15);
+        box-shadow: 0 8px 30px rgba(0,0,0,.2);
+    }
+    .cmd-card-title {
+        font-size:.72rem; font-weight:800; letter-spacing:1.8px; text-transform:uppercase;
+        margin-bottom:12px; display:flex; align-items:center; gap:7px;
+    }
+    .cmd-block {
+        background:rgba(0,0,0,.35); border-radius:10px;
+        padding:10px 14px; margin-bottom:8px;
+        border:1px solid rgba(255,255,255,.07);
+        font-family:'Courier New',monospace; font-size:.75rem;
+        color:#a7f3d0; line-height:1.6; word-break:break-all;
+    }
+    .cmd-block span.cmd-comment { color:#4d8c72; }
+    </style>
+
+    <div class="cmd-grid">
+      <div class="cmd-card">
+        <div class="cmd-card-title" style="color:#60a5fa">🔀 Kafka (Docker)</div>
+        <div class="cmd-block"><span class="cmd-comment"># Démarrer le broker</span><br>docker-compose up -d kafka</div>
+        <div class="cmd-block"><span class="cmd-comment"># Publier les produits</span><br>python src/kafka_producer.py</div>
+        <div class="cmd-block"><span class="cmd-comment"># Consommer → DuckDB</span><br>python src/kafka_consumer.py</div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-title" style="color:#a78bfa">⚡ Spark (Docker)</div>
+        <div class="cmd-block"><span class="cmd-comment"># Démarrer le cluster</span><br>docker-compose up -d spark-master spark-worker</div>
+        <div class="cmd-block"><span class="cmd-comment"># Lancer le pipeline</span><br>docker exec sogood-spark-master spark-submit --master spark://spark-master:7077 /opt/spark/work/src/spark_pipeline.py</div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-card-title" style="color:#34d399">🤖 ML + App</div>
+        <div class="cmd-block"><span class="cmd-comment"># Pipeline ML complet</span><br>python main.py</div>
+        <div class="cmd-block"><span class="cmd-comment"># Lancer l'application</span><br>streamlit run app/app.py</div>
+        <div class="cmd-block"><span class="cmd-comment"># URL locale</span><br>http://localhost:8501</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
