@@ -681,65 +681,172 @@ if page == "🏠 Dashboard":
         st.stop()
 
     s = describe_dataset(dff)
+    pct_ab    = 100 * len(dff[dff["nutriscore_grade"].isin(["a","b"])]) / max(len(dff), 1)
+    avg_sugar = dff["sugars_100g"].mean() if "sugars_100g" in dff.columns else 0
+
+    # Nutriscore distribution for the hero visual
+    ns_counts = {g: int((dff["nutriscore_grade"] == g).sum()) for g in ["a","b","c","d","e"]}
+    ns_total  = max(sum(ns_counts.values()), 1)
+    ns_pcts   = {g: ns_counts[g] / ns_total * 100 for g in ["a","b","c","d","e"]}
+    ns_colors = {"a":"#1fa37b","b":"#85bb2f","c":"#ffcc00","d":"#ff6600","e":"#ee3333"}
+    ns_labels = {"a":"A","b":"B","c":"C","d":"D","e":"E"}
+
+    hero_pills = "".join(f"""
+        <div class="hp">
+            <div class="hp-bar" style="height:{max(ns_pcts[g]*2.2,6):.0f}px;background:{ns_colors[g]}"></div>
+            <div class="hp-label" style="color:{ns_colors[g]}">{ns_labels[g]}</div>
+            <div class="hp-pct">{ns_pcts[g]:.0f}%</div>
+        </div>""" for g in ["a","b","c","d","e"])
+
+    strip_segs = "".join(
+        f"<div style='flex:{ns_pcts[g]};background:{ns_colors[g]};height:100%;"
+        f"display:flex;align-items:center;justify-content:center;"
+        f"font-size:.7rem;font-weight:800;color:rgba(255,255,255,.9)'>"
+        f"{'&nbsp;'+ns_labels[g]+'&nbsp;' if ns_pcts[g]>5 else ''}</div>"
+        for g in ["a","b","c","d","e"]
+    )
 
     st.markdown(f"""
-    <div class="hero-wrap">
-        <div class="hero-eyebrow">OPEN FOOD FACTS · ANALYSE IA</div>
-        <div class="hero-title">Mangez mieux,<br>chaque jour.</div>
-        <p class="hero-sub">
-            SoGood analyse {s['n_products']:,} produits alimentaires avec un moteur XGBoost
-            et NLP multilingue pour vous aider à faire les meilleurs choix nutritionnels.
+    <style>
+    .dash-hero {{
+        background: linear-gradient(135deg,#0d2318 0%,#122e22 50%,#0a1e17 100%);
+        border-radius:24px; padding:2.8rem 3rem 2.2rem;
+        margin-bottom:1.8rem;
+        border:1px solid rgba(52,211,153,.18);
+        box-shadow:0 20px 60px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.05);
+        display:flex; align-items:center; gap:3rem;
+        animation: fadeInUp .6s ease;
+    }}
+    .dash-hero-left {{ flex:1; min-width:0; }}
+    .dash-hero-right {{
+        flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8px;
+    }}
+    .dh-eyebrow {{
+        font-size:.65rem; font-weight:800; letter-spacing:2.5px; text-transform:uppercase;
+        color:#34d399; background:rgba(52,211,153,.12); display:inline-block;
+        padding:4px 14px; border-radius:100px; margin-bottom:1rem;
+    }}
+    .dh-title {{
+        font-size:3rem; font-weight:900; line-height:1.05; letter-spacing:-1.8px;
+        color:#fff; margin-bottom:.7rem;
+    }}
+    .dh-title span {{
+        background:linear-gradient(135deg,#34d399,#6ee7b7);
+        -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+    }}
+    .dh-sub {{
+        font-size:.95rem; color:rgba(200,230,220,.7); line-height:1.7;
+        max-width:520px; margin-bottom:1.5rem;
+    }}
+    .dh-stats {{ display:flex; gap:2rem; flex-wrap:wrap; }}
+    .dh-stat {{ display:flex; flex-direction:column; gap:2px; }}
+    .dh-stat-val {{ font-size:1.5rem; font-weight:900; color:#fff; letter-spacing:-.5px; }}
+    .dh-stat-lbl {{ font-size:.65rem; font-weight:700; color:rgba(200,230,220,.5); text-transform:uppercase; letter-spacing:.8px; }}
+    .dh-stat-sep {{ width:1px; background:rgba(255,255,255,.1); }}
+
+    /* Hero right — nutriscore bars */
+    .hp-wrap {{ display:flex; align-items:flex-end; gap:10px; height:120px; }}
+    .hp {{ display:flex; flex-direction:column; align-items:center; gap:4px; }}
+    .hp-bar {{ width:32px; border-radius:6px 6px 0 0; transition:height .4s ease; }}
+    .hp-label {{ font-size:.85rem; font-weight:900; }}
+    .hp-pct {{ font-size:.65rem; color:rgba(200,230,220,.5); font-weight:600; }}
+    .hp-title {{ font-size:.65rem; font-weight:700; letter-spacing:1.5px; text-transform:uppercase; color:rgba(200,230,220,.4); margin-top:4px; }}
+    </style>
+
+    <div class="dash-hero">
+      <div class="dash-hero-left">
+        <div class="dh-eyebrow">OPEN FOOD FACTS &nbsp;·&nbsp; ANALYSE IA &nbsp;·&nbsp; BIG DATA</div>
+        <div class="dh-title">Mangez mieux,<br><span>chaque jour.</span></div>
+        <p class="dh-sub">
+          SoGood analyse <strong style="color:#6ee7b7">{s['n_products']:,} produits</strong> alimentaires
+          avec XGBoost (93.6%) et NLP Hugging Face pour vous guider vers les meilleurs choix nutritionnels.
         </p>
-        <div class="hero-stats">
-            <div class="hero-stat">
-                <span class="hero-stat-val">{s['n_products']:,}</span>
-                <span class="hero-stat-lbl">Produits</span>
-            </div>
-            <div class="hero-stat">
-                <span class="hero-stat-val">{s['n_brands']:,}</span>
-                <span class="hero-stat-lbl">Marques</span>
-            </div>
-            <div class="hero-stat">
-                <span class="hero-stat-val">{s['n_categories']:,}</span>
-                <span class="hero-stat-lbl">Catégories</span>
-            </div>
-            <div class="hero-stat">
-                <span class="hero-stat-val">93.6%</span>
-                <span class="hero-stat-lbl">Précision IA</span>
-            </div>
+        <div class="dh-stats">
+          <div class="dh-stat">
+            <span class="dh-stat-val">{s['n_products']:,}</span>
+            <span class="dh-stat-lbl">Produits</span>
+          </div>
+          <div class="dh-stat-sep"></div>
+          <div class="dh-stat">
+            <span class="dh-stat-val">{s['n_brands']:,}</span>
+            <span class="dh-stat-lbl">Marques</span>
+          </div>
+          <div class="dh-stat-sep"></div>
+          <div class="dh-stat">
+            <span class="dh-stat-val">{s['n_categories']:,}</span>
+            <span class="dh-stat-lbl">Catégories</span>
+          </div>
+          <div class="dh-stat-sep"></div>
+          <div class="dh-stat">
+            <span class="dh-stat-val">93.6%</span>
+            <span class="dh-stat-lbl">Précision IA</span>
+          </div>
         </div>
+      </div>
+      <div class="dash-hero-right">
+        <div class="hp-wrap">{hero_pills}</div>
+        <div class="hp-title">Distribution Nutri-Score</div>
+      </div>
     </div>
     """, unsafe_allow_html=True)
 
-    pct_ab = 100 * len(dff[dff["nutriscore_grade"].isin(["a","b"])]) / max(len(dff), 1)
-    avg_sugar = dff["sugars_100g"].mean() if "sugars_100g" in dff.columns else 0
-    avg_salt  = dff["salt_100g"].mean()   if "salt_100g"   in dff.columns else 0
-
+    # ── KPI cards avec couleurs distinctes ───────────────────────────────
+    avg_additives = s['avg_additives']
     st.markdown(f"""
+    <style>
+    .kpi-card-green  {{ --kc:209,122,94;  }} /* déjà défini via ::before */
+    .kpi-c1::before {{ background:linear-gradient(90deg,#1D7A5E,#34d399) !important; }}
+    .kpi-c2::before {{ background:linear-gradient(90deg,#059669,#6ee7b7) !important; }}
+    .kpi-c3::before {{ background:linear-gradient(90deg,#f59e0b,#fcd34d) !important; }}
+    .kpi-c4::before {{ background:linear-gradient(90deg,#ef4444,#fca5a5) !important; }}
+    .kpi-progress {{ height:4px; border-radius:2px; margin-top:.8rem; background:#f0f5f2; overflow:hidden; }}
+    .kpi-progress-bar {{ height:100%; border-radius:2px; transition:width .8s ease; }}
+    </style>
     <div class="kpi-grid">
-        <div class="kpi-card">
+        <div class="kpi-card kpi-c1">
             <div class="kpi-icon">🛒</div>
             <div class="kpi-value">{s['n_products']:,}</div>
             <div class="kpi-label">Produits analysés</div>
+            <div class="kpi-progress"><div class="kpi-progress-bar" style="width:100%;background:linear-gradient(90deg,#1D7A5E,#34d399)"></div></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-c2">
             <div class="kpi-icon">🌿</div>
             <div class="kpi-value">{pct_ab:.0f}%</div>
             <div class="kpi-label">Nutri-Score A ou B</div>
+            <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{pct_ab:.0f}%;background:linear-gradient(90deg,#059669,#6ee7b7)"></div></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-c3">
             <div class="kpi-icon">🍬</div>
             <div class="kpi-value">{avg_sugar:.1f}g</div>
             <div class="kpi-label">Sucres moy. / 100g</div>
+            <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{min(avg_sugar/50*100,100):.0f}%;background:linear-gradient(90deg,#f59e0b,#fcd34d)"></div></div>
         </div>
-        <div class="kpi-card">
+        <div class="kpi-card kpi-c4">
             <div class="kpi-icon">⚗️</div>
-            <div class="kpi-value">{s['avg_additives']:.1f}</div>
+            <div class="kpi-value">{avg_additives:.1f}</div>
             <div class="kpi-label">Additifs moy.</div>
+            <div class="kpi-progress"><div class="kpi-progress-bar" style="width:{min(avg_additives/10*100,100):.0f}%;background:linear-gradient(90deg,#ef4444,#fca5a5)"></div></div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Barre Nutri-Score ─────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="margin:1.2rem 0 1.8rem;">
+      <div style="font-size:.68rem;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;
+                  color:#94a3b8;margin-bottom:.6rem;">Répartition Nutri-Score</div>
+      <div style="display:flex;height:28px;border-radius:10px;overflow:hidden;
+                  box-shadow:0 4px 14px rgba(0,0,0,.1)">
+        {strip_segs}
+      </div>
+      <div style="display:flex;gap:16px;margin-top:.6rem;flex-wrap:wrap;">
+        {''.join(f'<span style="display:flex;align-items:center;gap:5px;font-size:.75rem;font-weight:600;color:#4a5568"><span style="width:10px;height:10px;border-radius:2px;background:{ns_colors[g]};display:inline-block"></span>{ns_labels[g]} — {ns_counts[g]:,} ({ns_pcts[g]:.1f}%)</span>' for g in ["a","b","c","d","e"])}
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Graphiques ────────────────────────────────────────────────────────
+    st.markdown('<div class="sect">📊 ANALYSES VISUELLES</div>', unsafe_allow_html=True)
     c1, c2 = st.columns(2)
     c1.plotly_chart(plot_nutriscore_distribution(dff), use_container_width=True)
     c2.plotly_chart(plot_additives_vs_nutriscore(dff), use_container_width=True)
