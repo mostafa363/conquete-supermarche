@@ -615,6 +615,7 @@ with st.sidebar:
 
     pages_base = [
         "🏠 Dashboard",
+        "💬 Assistant IA (NutriBot)",
         "🔍 Recherche produits",
         "📊 Analyses détaillées",
         "🤖 Prédiction IA",
@@ -674,8 +675,136 @@ if not df.empty:
 else:
     dff = df.copy()
 
+# ── PAGE NutriBot : Assistant IA ─────────────────────────────────────────
+if page == "💬 Assistant IA (NutriBot)":
+    st.markdown("""
+    <div class="page-hdr">
+        <h2>💬 NutriBot — Assistant nutritionnel IA</h2>
+        <p>Posez vos questions sur les produits, le Nutri-Score, les additifs ou la nutrition en général.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Clé API ──────────────────────────────────────────────────────────
+    api_key = ""
+    try:
+        api_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+    except Exception:
+        pass
+
+    if not api_key:
+        with st.sidebar:
+            st.markdown("""
+            <div class="sb-section-hdr">
+                <span class="sb-section-icon">🔑</span>
+                <span>API NutriBot</span>
+            </div>""", unsafe_allow_html=True)
+            api_key = st.text_input("Clé Anthropic", type="password",
+                                    placeholder="sk-ant-...",
+                                    help="Obtenez une clé sur console.anthropic.com")
+
+    # ── Initialiser l'historique ──────────────────────────────────────────
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    # ── Style chat ────────────────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    .nb-intro {
+        background: linear-gradient(135deg,#0d2318,#122e22);
+        border-radius:20px; padding:1.6rem 2rem; margin-bottom:1.5rem;
+        border:1px solid rgba(52,211,153,.2);
+        display:flex; align-items:center; gap:1.2rem;
+    }
+    .nb-avatar {
+        width:56px; height:56px; border-radius:50%; flex-shrink:0;
+        background:linear-gradient(135deg,#1D7A5E,#34d399);
+        display:flex; align-items:center; justify-content:center;
+        font-size:1.8rem;
+        box-shadow:0 0 20px rgba(52,211,153,.35);
+    }
+    .nb-intro-text { color:#c8e6dc; }
+    .nb-intro-text strong { color:#fff; font-size:1rem; }
+    .nb-intro-text p { font-size:.85rem; margin:.3rem 0 0; opacity:.8; }
+    .nb-suggestions { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:1rem; }
+    .nb-chip {
+        background:rgba(29,122,94,.1); border:1.5px solid rgba(29,122,94,.25);
+        border-radius:100px; padding:6px 14px; font-size:.8rem; font-weight:600;
+        color:#1D7A5E; cursor:pointer; transition:all .2s;
+        white-space:nowrap;
+    }
+    .nb-chip:hover { background:rgba(29,122,94,.2); border-color:#1D7A5E; }
+    </style>
+
+    <div class="nb-intro">
+      <div class="nb-avatar">🥦</div>
+      <div class="nb-intro-text">
+        <strong>NutriBot — Assistant nutritionnel IA</strong>
+        <p>Je suis connecté à la base SoGood (52 000+ produits) et je réponds à vos
+        questions sur la nutrition, le Nutri-Score et les produits alimentaires.</p>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Questions suggérées ───────────────────────────────────────────────
+    suggestions = [
+        "🍫 Le Nutella est-il dangereux ?",
+        "🥤 Quel soda a le meilleur Nutri-Score ?",
+        "⚗️ C'est quoi les additifs à éviter ?",
+        "🌾 Pourquoi manger des fibres ?",
+        "🧂 Quel est l'impact du sel sur la santé ?",
+    ]
+
+    cols_s = st.columns(len(suggestions))
+    for i, (col, sug) in enumerate(zip(cols_s, suggestions)):
+        if col.button(sug, key=f"sug_{i}", use_container_width=True):
+            st.session_state.chat_history.append({"role": "user", "content": sug})
+            st.rerun()
+
+    # ── Afficher l'historique ─────────────────────────────────────────────
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"],
+                             avatar="🥦" if msg["role"] == "assistant" else "👤"):
+            st.markdown(msg["content"])
+
+    # ── Input utilisateur ─────────────────────────────────────────────────
+    user_input = st.chat_input("Posez votre question nutritionnelle...")
+
+    if user_input:
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(user_input)
+
+        if not api_key or not api_key.startswith("sk-"):
+            with st.chat_message("assistant", avatar="🥦"):
+                st.warning("🔑 Entrez votre clé API Anthropic dans la sidebar pour activer NutriBot.")
+        else:
+            with st.chat_message("assistant", avatar="🥦"):
+                with st.spinner("NutriBot réfléchit..."):
+                    try:
+                        from src.chatbot import chat as nutribot_chat
+                        reply = nutribot_chat(
+                            st.session_state.chat_history,
+                            api_key,
+                        )
+                        st.markdown(reply)
+                        st.session_state.chat_history.append(
+                            {"role": "assistant", "content": reply}
+                        )
+                    except Exception as e:
+                        err = str(e)
+                        if "authentication" in err.lower() or "401" in err:
+                            st.error("Clé API invalide. Vérifiez votre clé Anthropic.")
+                        else:
+                            st.error(f"Erreur : {err}")
+
+    # ── Bouton reset ──────────────────────────────────────────────────────
+    if st.session_state.chat_history:
+        if st.button("🗑️ Effacer la conversation", use_container_width=False):
+            st.session_state.chat_history = []
+            st.rerun()
+
 # ── PAGE 1 : Dashboard ───────────────────────────────────────────────────
-if page == "🏠 Dashboard":
+elif page == "🏠 Dashboard":
     if df.empty:
         st.warning("⚠️ Aucune donnée. Lance d'abord `python main.py`")
         st.stop()
